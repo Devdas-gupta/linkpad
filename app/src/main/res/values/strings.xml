@@ -1,0 +1,8 @@
+<resources>
+    <string name="app_name">Linkpad</string>
+    <string name="channel_name">Linkpad Service</string>
+    <string name="channel_description">Active connection to remote device</string>
+    <string name="notification_title">Linkpad</string>
+    <string name="notification_text_disconnected">Ready to connect</string>
+    <string name="notification_text_connected">Connected to %1$s</string>
+</resources>

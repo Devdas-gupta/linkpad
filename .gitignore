@@ -1,0 +1,81 @@
+# Build artifacts
+*.apk
+*.aab
+*.ap_
+*.aar
+*.dex
+*.class
+bin/
+gen/
+out/
+release/
+build/
+**/build/
+.gradle/
+.cxx/
+
+# Local config / secrets
+local.properties
+*.jks
+*.keystore
+keystore.properties
+key.properties
+**/google-services.json
+**/firebase-config.json
+
+# IDE — IntelliJ / Android Studio
+.idea/
+*.iml
+*.ipr
+*.iws
+.navigation/
+captures/
+
+# IDE — VS Code
+.vscode/
+
+# Gradle
+.gradletasknamecache
+gradle-app.setting
+
+# OS junk
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# Logs / coverage / profilers
+*.log
+*.hprof
+*.prof
+hs_err_pid*
+proguard/
+
+# Private docs / agent state
+CLAUDE.md
+.claude/
+.cursor/
+memory/
+*.private.md
+source_review_report.md
+
+# Crash + diagnostic dumps
+android-profile/
+
+# NDK
+obj/
+.externalNativeBuild/
+.cxx/
+
+# Test output
+test-results/
+reports/
+
+# Temporary
+*.tmp
+*.swp
+*~

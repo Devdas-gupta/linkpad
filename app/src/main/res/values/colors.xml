@@ -1,0 +1,9 @@
+<resources>
+    <color name="primary">#1A5FA8</color>
+    <color name="touchpad_surface">#0F3460</color>
+    <color name="background_light">#F4F6FA</color>
+    <color name="background_dark">#0D1117</color>
+    <color name="surface_light">#FFFFFF</color>
+    <color name="surface_dark">#161B22</color>
+    <color name="accent">#1D9E75</color>
+</resources>
