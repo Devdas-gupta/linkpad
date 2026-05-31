@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -136,6 +137,7 @@ private fun PremiumNavBar(current: Tab, onSelect: (Tab) -> Unit) {
                 color = MaterialTheme.colorScheme.outline,
                 shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
             )
+            .navigationBarsPadding()
             .padding(horizontal = 8.dp, vertical = 10.dp),
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically
