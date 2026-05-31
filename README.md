@@ -1,12 +1,21 @@
-# Linkpad
+<p align="center">
+  <img src="assets/banner.png" alt="Linkpad — wireless Bluetooth keyboard, mouse and media remote for Android" />
+</p>
 
-> Turn your Android phone into a wireless keyboard, mouse, and media remote for any Bluetooth host. No companion app on the target device.
+<h1 align="center">Linkpad</h1>
 
-[![Platform](https://img.shields.io/badge/platform-Android-green)](https://www.android.com/)
-[![Min SDK](https://img.shields.io/badge/minSdk-28-blue)](https://developer.android.com/)
-[![Target SDK](https://img.shields.io/badge/targetSdk-34-blue)](https://developer.android.com/)
-[![Kotlin](https://img.shields.io/badge/Kotlin-Compose-7F52FF)](https://kotlinlang.org/)
-[![License](https://img.shields.io/badge/license-MIT-lightgrey)](#license)
+<p align="center">
+  <em>Turn your Android phone into a wireless keyboard, mouse, and media remote for any Bluetooth host. No companion app on the target device.</em>
+</p>
+
+<p align="center">
+  <a href="https://www.android.com/"><img alt="Platform" src="https://img.shields.io/badge/platform-Android-3DDC84?logo=android&logoColor=white" /></a>
+  <a href="https://developer.android.com/"><img alt="Min SDK" src="https://img.shields.io/badge/minSdk-28-1976D2" /></a>
+  <a href="https://developer.android.com/"><img alt="Target SDK" src="https://img.shields.io/badge/targetSdk-35-1976D2" /></a>
+  <a href="https://kotlinlang.org/"><img alt="Kotlin" src="https://img.shields.io/badge/Kotlin-Compose-7F52FF?logo=kotlin&logoColor=white" /></a>
+  <a href="https://github.com/Devdas-gupta/linkpad/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/Devdas-gupta/linkpad?color=00E5C3&label=release" /></a>
+  <a href="#license"><img alt="License" src="https://img.shields.io/badge/license-MIT-lightgrey" /></a>
+</p>
 
 ---
 
