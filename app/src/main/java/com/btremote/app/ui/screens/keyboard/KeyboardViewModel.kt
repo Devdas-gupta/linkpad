@@ -46,7 +46,7 @@ class KeyboardViewModel @Inject constructor(
     private val queue = Channel<KbAction>(capacity = Channel.UNLIMITED)
 
     init {
-        viewModelScope.launch {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             queue.consumeAsFlow().collect { action ->
                 val sender = controller.reportSender
                 if (!sender.isReady()) return@collect

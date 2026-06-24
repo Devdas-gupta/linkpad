@@ -19,11 +19,11 @@ class SettingsViewModel @Inject constructor(
     private val profileRepo: HostProfileRepository
 ) : ViewModel() {
 
-    val preferences: StateFlow<AppPreferences?> = prefs.preferences
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+    val preferences: StateFlow<AppPreferences> = prefs.preferences
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AppPreferences.DEFAULT)
 
-    val profilesState: StateFlow<HostProfilesState?> = profileRepo.state
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+    val profilesState: StateFlow<HostProfilesState> = profileRepo.state
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HostProfilesState.DEFAULT)
 
     fun setPointerSpeed(v: Int) = viewModelScope.launch { prefs.setPointerSpeed(v) }
     fun setScrollSpeed(v: Int) = viewModelScope.launch { prefs.setScrollSpeed(v) }
@@ -32,7 +32,8 @@ class SettingsViewModel @Inject constructor(
     fun setScrollBarPosition(v: String) = viewModelScope.launch { prefs.setScrollBarPosition(v) }
     fun setMouseButtonLayout(v: String) = viewModelScope.launch { prefs.setMouseButtonLayout(v) }
     fun setMouseButtonsPosition(v: String) = viewModelScope.launch { prefs.setMouseButtonsPosition(v) }
-    fun setShowShortcuts(v: Boolean) = viewModelScope.launch { prefs.setShowShortcuts(v) }
+    fun setShowShortcutsWin(v: Boolean) = viewModelScope.launch { prefs.setShowShortcutsWin(v) }
+    fun setShowShortcutsMac(v: Boolean) = viewModelScope.launch { prefs.setShowShortcutsMac(v) }
     fun setShowFKeys(v: Boolean) = viewModelScope.launch { prefs.setShowFKeys(v) }
     fun setShowArrows(v: Boolean) = viewModelScope.launch { prefs.setShowArrows(v) }
     fun setShowEdit(v: Boolean) = viewModelScope.launch { prefs.setShowEdit(v) }
@@ -51,6 +52,7 @@ class SettingsViewModel @Inject constructor(
     fun setAirMouseShowMiddle(v: Boolean) = viewModelScope.launch { prefs.setAirMouseShowMiddle(v) }
     fun setAirMouseShowReset(v: Boolean) = viewModelScope.launch { prefs.setAirMouseShowReset(v) }
     fun setTargetOs(v: String) = viewModelScope.launch { prefs.setTargetOs(v) }
+    fun setBackgroundServiceNotification(v: Boolean) = viewModelScope.launch { prefs.setBackgroundServiceNotification(v) }
 
     fun setActiveProfile(id: String) = viewModelScope.launch { profileRepo.setActive(id) }
     fun setProfileTargetOs(id: String, os: String) = viewModelScope.launch { profileRepo.setTargetOs(id, os) }

@@ -25,6 +25,17 @@ data class HostProfilesState(
     val activeId: String
 ) {
     val active: HostProfile? get() = profiles.firstOrNull { it.id == activeId } ?: profiles.firstOrNull()
+
+    companion object {
+        val DEFAULT = HostProfilesState(
+            profiles = listOf(
+                HostProfile("p_mac", "Mac", "mac", "", ""),
+                HostProfile("p_pc", "PC", "windows", "", ""),
+                HostProfile("p_ipad", "iPad", "auto", "", "")
+            ),
+            activeId = "p_mac"
+        )
+    }
 }
 
 @Singleton

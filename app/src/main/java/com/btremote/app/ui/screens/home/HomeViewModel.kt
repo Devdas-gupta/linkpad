@@ -6,6 +6,8 @@ import com.btremote.app.bluetooth.BluetoothManager
 import com.btremote.app.bluetooth.ConnectionState
 import com.btremote.app.bluetooth.HidServiceController
 import com.btremote.app.data.HostProfileRepository
+import com.btremote.app.data.PairedDeviceEntry
+import com.btremote.app.data.PairedDeviceRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.SharingStarted
@@ -21,16 +23,21 @@ data class QuickPairTarget(val name: String, val address: String)
 class HomeViewModel @Inject constructor(
     private val controller: HidServiceController,
     private val btManager: BluetoothManager,
-    private val profileRepo: HostProfileRepository
+    private val profileRepo: HostProfileRepository,
+    private val pairedRepo: PairedDeviceRepository
 ) : ViewModel() {
+
     val connectionState: StateFlow<ConnectionState> = controller.connectionState
+
+    val pairedHistory: StateFlow<List<PairedDeviceEntry>> = pairedRepo.devices
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val quickPairTarget: StateFlow<QuickPairTarget?> = profileRepo.state
         .map { s ->
             val a = s.active ?: return@map null
             if (a.lastDeviceAddress.isBlank()) null
             else QuickPairTarget(
-                name = a.lastDeviceName.ifBlank { a.name },
+                name    = a.lastDeviceName.ifBlank { a.name },
                 address = a.lastDeviceAddress
             )
         }
@@ -38,11 +45,30 @@ class HomeViewModel @Inject constructor(
 
     fun quickPair() {
         viewModelScope.launch {
-            val a = profileRepo.state.first().active ?: return@launch
+            val a    = profileRepo.state.first().active ?: return@launch
             val addr = a.lastDeviceAddress.takeIf { it.isNotBlank() } ?: return@launch
             if (!btManager.isBluetoothEnabled()) return@launch
             val device = btManager.deviceFromAddress(addr) ?: return@launch
             controller.connect(device)
         }
+    }
+
+    /** Switch to a previously-paired device from the dropdown. */
+    fun reconnectTo(entry: PairedDeviceEntry) {
+        viewModelScope.launch {
+            if (!btManager.isBluetoothEnabled()) return@launch
+            val device = btManager.deviceFromAddress(entry.address) ?: return@launch
+            controller.connect(device)
+        }
+    }
+
+    /** Disconnect the current session from the connection bar dropdown. */
+    fun disconnect() {
+        controller.disconnect()
+    }
+
+    /** Forget a paired device from the connection bar dropdown. */
+    fun forgetDevice(entry: PairedDeviceEntry) {
+        viewModelScope.launch { pairedRepo.remove(entry.address) }
     }
 }

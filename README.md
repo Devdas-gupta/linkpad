@@ -9,6 +9,7 @@
 </p>
 
 <p align="center">
+  <a href="https://play.google.com/store/apps/details?id=com.btremote.app"><img alt="Get it on Google Play" src="https://img.shields.io/badge/Google_Play-Download-3DDC84?logo=google-play&logoColor=white" /></a>
   <a href="https://www.android.com/"><img alt="Platform" src="https://img.shields.io/badge/platform-Android-3DDC84?logo=android&logoColor=white" /></a>
   <a href="https://developer.android.com/"><img alt="Min SDK" src="https://img.shields.io/badge/minSdk-28-1976D2" /></a>
   <a href="https://developer.android.com/"><img alt="Target SDK" src="https://img.shields.io/badge/targetSdk-35-1976D2" /></a>
@@ -16,6 +17,18 @@
   <a href="https://github.com/Devdas-gupta/linkpad/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/Devdas-gupta/linkpad?color=00E5C3&label=release" /></a>
   <a href="#license"><img alt="License" src="https://img.shields.io/badge/license-MIT-lightgrey" /></a>
 </p>
+
+---
+
+## Download
+
+<p align="center">
+  <a href="https://play.google.com/store/apps/details?id=com.btremote.app">
+    <img src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" alt="Get it on Google Play" height="80"/>
+  </a>
+</p>
+
+Or grab the latest APK directly from [GitHub Releases](https://github.com/Devdas-gupta/linkpad/releases/latest).
 
 ---
 
@@ -32,11 +45,43 @@ Use it as a silent remote for your living-room TV, a backup keyboard when yours 
 - **Touchpad** — laptop-class trackpad with 1-finger move, 2-finger scroll (vertical + horizontal AC Pan), 2-finger tap right-click, tap-to-drag, and a precision right-edge scroll strip.
 - **Software keyboard** — relays your typing to the host in real time. Optional Shortcuts row (Cmd / Ctrl + C/V/X/Z/A, Alt+Tab), F-keys, Edit cluster (Backspace / Del / Home / End / PgUp / PgDn / Insert), and Arrow cluster.
 - **Air mouse** — gyroscope-driven cursor with low-pass filter. Configurable sensitivity, axis invert, and per-button visibility.
-- **Media remote** — brightness, volume, mute, prev/next track, play/pause, plus 10 s seek for YouTube / Netflix / Spotify / VLC.
+- **Media remote** — brightness, volume, mute, prev/next track, play/pause, plus press-and-hold FF/RW for continuous seeking.
+- **TV Remote** — dedicated tab with D-Pad ring, system keys (Back / Home / Menu), volume & channel controls, colour function keys (F1–F4), Power & Input/Source buttons, and a numeric keypad.
 - **Multi-host profiles** — save Mac / PC / iPad / TV profiles, each with its own target-OS layout and last-connected device. Switch in one tap.
-- **Quick reconnect** — one-tap button on the connection bar reconnects to the active profile's last device without scanning.
-- **Themed UI** — light / dark / system theme, smooth tab transitions, premium nav bar.
-- **Connect anything** — combined Classic discovery + BLE scan in parallel; bonded devices pinned to top.
+- **Quick Settings Tile** — connect or reconnect directly from the Android notification shade.
+- **Device Switcher Dropdown** — one-tap switch between paired hosts with Disconnect and Forget-device options.
+- **Themed UI** — SoulExtender Synth glassmorphic dark theme with electric violet, neon cyan, and synth magenta accents. Light / dark / system toggle.
+
+---
+
+## What's New — v1.1.0 "SynthLink"
+
+### ✨ Major New Features
+- **Redesigned glassmorphic UI** (SoulExtender Synth theme) with frosted-glass nav bar and radial glow effects.
+- **TV Remote tab** — full D-Pad, numeric keypad, Power & Input/Source buttons, colour keys.
+- **Onboarding walkthrough** — guided 4-page first-launch setup with permission explanations.
+- **Quick Settings Tile** — connect to Linkpad from the notification shade.
+- **Device Switcher Dropdown** — switch, disconnect, or forget paired hosts without leaving the current tab.
+- **Independent Windows & macOS shortcut rows** — toggle each OS's shortcut strip separately on the Keyboard tab.
+- **Android nav buttons on Touchpad** — Back / Home / Recents row (toggle in Settings → Controls).
+- **Scroll strip side toggle** — move the edge scroll strip to the left or right (Settings → Mouse).
+- **In-app Bluetooth pairing** — pair new devices directly inside Linkpad; no need to open Android Settings.
+
+### 🚀 Major Improvements
+- **Windows Bluetooth keep-alive** — background heartbeat prevents Sniff Mode lag and stutter on Windows.
+- **Smooth 125 Hz mouse** — throttled delta distribution eliminates L2CAP buffer overflow and cursor jitter.
+- **Background connection retention** — foreground service auto-promotes on connect so the link survives app minimisation.
+- **Zero-lag typing** — keyboard queue runs on `Dispatchers.IO`; key cycle cut to 20 ms.
+- **Press-and-hold FF/RW** — hold for continuous seeking; brief tap sends a single skip.
+
+### 🐛 Major Bug Fixes
+- Fixed crash on rapid double-tap of "Get Started" in onboarding (`ArrayIndexOutOfBoundsException`).
+- Fixed QS Tile crash on Android 13 and below (`Tile.setSubtitle` API guard).
+- Fixed stuck keys on host when press-and-hold seek loop was cancelled.
+- Fixed Bluetooth permission denial failing silently — now shows an error card with a Settings deep-link.
+- Fixed erratic horizontal scroll on Windows (explicit HID AC Pan bounds in descriptor).
+
+See [update.md](update.md) for the full detailed changelog.
 
 ---
 
@@ -46,9 +91,9 @@ Use it as a silent remote for your living-room TV, a backup keyboard when yours 
 | :-: | :-: | :-: |
 | Trackpad surface + edge scroll strip | Live typing relay + chip rows | Gyro cursor visualizer + click row |
 
-| Media | Connect | Settings |
-| :-: | :-: | :-: |
-| Brightness / volume / transport | Scan + paired history | Profiles, OS, theme, About |
+| Media | TV Remote | Connect | Settings |
+| :-: | :-: | :-: | :-: |
+| Brightness / volume / transport | D-Pad + numpad + system keys | Scan + paired history | Profiles, OS, theme, About |
 
 ---
 
@@ -111,7 +156,7 @@ After the first pair, the active profile remembers the device. Tap **QUICK** on 
 - **BluetoothHidDevice** API for HID reports
 - **MVVM** with one ViewModel per screen
 - **Foreground Service** owns the HID profile proxy + device connection lifecycle
-- Min SDK 28 · Target SDK 34
+- Min SDK 28 · Target SDK 35
 
 ---
 
@@ -119,13 +164,13 @@ After the first pair, the active profile remembers the device. Tap **QUICK** on 
 
 ```
 app/
-├── bluetooth/         HID descriptor, report sender, service, scan manager
+├── bluetooth/         HID descriptor, report sender, service, scan manager, QS tile
 ├── data/              Preferences, paired-device cache, host profiles
 ├── sensor/            Gyroscope reader for air mouse
 └── ui/
-    ├── components/    Connection bar, mouse buttons, sliders, toggles
+    ├── components/    Connection bar, glass card, mouse buttons, sliders, toggles
     ├── navigation/    Compose nav graph
-    ├── screens/       Touchpad / Keyboard / AirMouse / Media / Connect / Settings
+    ├── screens/       Touchpad / Keyboard / AirMouse / Media / TV / Connect / Settings / Onboarding
     └── theme/         Material3 color, typography
 ```
 
@@ -175,4 +220,4 @@ MIT — see [LICENSE](LICENSE).
 
 **Devdas Kumar** · [@Devdas-gupta](https://github.com/Devdas-gupta)
 
-If Linkpad saved you a Bluetooth dongle, a star on the repo is appreciated.
+If Linkpad saved you a Bluetooth dongle, a star on the repo is appreciated. ⭐

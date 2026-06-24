@@ -33,6 +33,9 @@ class HidReportSender @Inject constructor() {
     @Volatile
     private var mouseButtons: Int = 0
 
+    @Volatile
+    private var lastReportSentTime: Long = 0L
+
     private val accumX = AtomicInteger(0)
     private val accumY = AtomicInteger(0)
     private val accumScroll = AtomicInteger(0)
@@ -74,13 +77,35 @@ class HidReportSender @Inject constructor() {
     private fun startCoalesceLoop() {
         if (coalesceJob?.isActive == true) return
         coalesceJob = coalesceScope.launch {
+            lastReportSentTime = System.currentTimeMillis()
             while (true) {
                 if (mouseDirty.compareAndSet(true, false)) {
-                    val dx = accumX.getAndSet(0)
-                    val dy = accumY.getAndSet(0)
-                    val sc = accumScroll.getAndSet(0)
-                    val hs = accumHScroll.getAndSet(0)
+                    val rawX = accumX.get()
+                    val rawY = accumY.get()
+                    val rawScroll = accumScroll.get()
+                    val rawHScroll = accumHScroll.get()
+
+                    val dx = rawX.coerceIn(-127, 127)
+                    val dy = rawY.coerceIn(-127, 127)
+                    val sc = rawScroll.coerceIn(-127, 127)
+                    val hs = rawHScroll.coerceIn(-127, 127)
+
+                    accumX.addAndGet(-dx)
+                    accumY.addAndGet(-dy)
+                    accumScroll.addAndGet(-sc)
+                    accumHScroll.addAndGet(-hs)
+
+                    if (accumX.get() != 0 || accumY.get() != 0 || accumScroll.get() != 0 || accumHScroll.get() != 0) {
+                        mouseDirty.set(true)
+                    }
+
                     sendMouseReport(mouseButtons, dx, dy, sc, hs)
+                } else {
+                    val now = System.currentTimeMillis()
+                    if (now - lastReportSentTime >= 500) {
+                        // Send keep-alive empty mouse report to prevent host (especially Windows) from dropping into sniff mode
+                        sendMouseReport(mouseButtons, 0, 0, 0, 0)
+                    }
                 }
                 delay(mouseRateMs)
             }
@@ -139,29 +164,17 @@ class HidReportSender @Inject constructor() {
     private fun sendMouseReport(buttons: Int, dx: Int, dy: Int, scroll: Int, hScroll: Int = 0): Boolean {
         val device = connectedDevice ?: return false
         val hid = hidDevice ?: return false
-        var rx = dx
-        var ry = dy
-        var rs = scroll
-        var rh = hScroll
-        var ok = true
-        do {
-            val cx = rx.coerceIn(-127, 127)
-            val cy = ry.coerceIn(-127, 127)
-            val cs = rs.coerceIn(-127, 127)
-            val ch = rh.coerceIn(-127, 127)
-            val payload = ByteArray(5)
-            payload[0] = (buttons and 0x1F).toByte()
-            payload[1] = cx.toByte()
-            payload[2] = cy.toByte()
-            payload[3] = cs.toByte()
-            payload[4] = ch.toByte()
-            ok = ok and safeSend { hid.sendReport(device, HidDescriptors.REPORT_ID_MOUSE.toInt(), payload) }
-            rx -= cx
-            ry -= cy
-            rs -= cs
-            rh -= ch
-        } while (rx != 0 || ry != 0 || rs != 0 || rh != 0)
-        return ok
+        val cx = dx.coerceIn(-127, 127)
+        val cy = dy.coerceIn(-127, 127)
+        val cs = scroll.coerceIn(-127, 127)
+        val ch = hScroll.coerceIn(-127, 127)
+        val payload = ByteArray(5)
+        payload[0] = (buttons and 0x1F).toByte()
+        payload[1] = cx.toByte()
+        payload[2] = cy.toByte()
+        payload[3] = cs.toByte()
+        payload[4] = ch.toByte()
+        return safeSend { hid.sendReport(device, HidDescriptors.REPORT_ID_MOUSE.toInt(), payload) }
     }
 
     suspend fun keyDown(keyCode: HidKeyCode, modifierMask: Int = 0): Int = kbMutex.withLock {
@@ -188,13 +201,18 @@ class HidReportSender @Inject constructor() {
         sendKeyboardState()
     }
 
-    suspend fun pressAndRelease(keyCode: HidKeyCode, modifiers: Int = 0, holdMs: Long = 15L) {
-        keyDown(keyCode, modifiers)
-        delay(holdMs)
-        keyUp(keyCode, modifiers)
+    suspend fun pressAndRelease(keyCode: HidKeyCode, modifiers: Int = 0, holdMs: Long = 10L) {
+        try {
+            keyDown(keyCode, modifiers)
+            delay(holdMs)
+        } finally {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                keyUp(keyCode, modifiers)
+            }
+        }
     }
 
-    suspend fun typeChar(c: Char, holdMs: Long = 12L, gapMs: Long = 12L) {
+    suspend fun typeChar(c: Char, holdMs: Long = 10L, gapMs: Long = 10L) {
         val (key, modifier) = HidKeyCode.fromChar(c) ?: return
         pressAndRelease(key, modifier, holdMs)
         delay(gapMs)
@@ -242,7 +260,11 @@ class HidReportSender @Inject constructor() {
     }
 
     private inline fun safeSend(crossinline block: () -> Boolean): Boolean = try {
-        block()
+        val success = block()
+        if (success) {
+            lastReportSentTime = System.currentTimeMillis()
+        }
+        success
     } catch (t: Throwable) {
         Log.w(TAG, "sendReport: ${t.message}")
         false
@@ -252,7 +274,7 @@ class HidReportSender @Inject constructor() {
 
     fun resetState() {
         mouseButtons = 0
-        accumX.set(0); accumY.set(0); accumScroll.set(0)
+        accumX.set(0); accumY.set(0); accumScroll.set(0); accumHScroll.set(0)
         mouseDirty.set(false)
         kbSlots.fill(0)
         kbModifiers = 0

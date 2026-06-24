@@ -32,13 +32,22 @@ import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.cancel
+import com.btremote.app.data.PreferencesRepository
 
 @AndroidEntryPoint
 class HidService : Service() {
 
     @Inject lateinit var reportSender: HidReportSender
+    @Inject lateinit var preferencesRepository: PreferencesRepository
 
     private val binder = LocalBinder()
+    private val serviceScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main + kotlinx.coroutines.SupervisorJob())
+    private var isForeground = false
+    @Volatile
+    private var lastNotificationText = ""
 
     private val _connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Idle)
     val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
@@ -56,17 +65,52 @@ class HidService : Service() {
 
     private val btStateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent?.action != BluetoothAdapter.ACTION_STATE_CHANGED) return
-            when (intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR)) {
-                BluetoothAdapter.STATE_ON -> {
-                    Log.i(TAG, "BT STATE_ON — registering HID proxy")
-                    if (hidDevice == null) registerHidProxy()
+            when (intent?.action) {
+                BluetoothAdapter.ACTION_STATE_CHANGED -> {
+                    when (intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR)) {
+                        BluetoothAdapter.STATE_ON -> {
+                            Log.i(TAG, "BT STATE_ON — registering HID proxy")
+                            if (hidDevice == null) registerHidProxy()
+                        }
+                        BluetoothAdapter.STATE_OFF, BluetoothAdapter.STATE_TURNING_OFF -> {
+                            _appRegistered.value = false
+                            _connectionState.value = ConnectionState.Disconnected
+                            reportSender.attach(null, null)
+                            hidDevice = null
+                        }
+                    }
                 }
-                BluetoothAdapter.STATE_OFF, BluetoothAdapter.STATE_TURNING_OFF -> {
-                    _appRegistered.value = false
-                    _connectionState.value = ConnectionState.Disconnected
-                    reportSender.attach(null, null)
-                    hidDevice = null
+                BluetoothDevice.ACTION_BOND_STATE_CHANGED -> {
+                    val device = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
+                    }
+                    device ?: return
+                    val bondState = intent.getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, BluetoothDevice.ERROR)
+                    val prevBondState = intent.getIntExtra(BluetoothDevice.EXTRA_PREVIOUS_BOND_STATE, BluetoothDevice.ERROR)
+                    Log.i(TAG, "Bond state changed for ${device.address}: prev=$prevBondState new=$bondState")
+                    
+                    if (bondState == BluetoothDevice.BOND_BONDED) {
+                        val state = _connectionState.value
+                        if (state is ConnectionState.Connecting && state.device.address == device.address) {
+                            Log.i(TAG, "Device bonded successfully. Connecting HID...")
+                            val proxy = hidDevice
+                            if (proxy != null && _appRegistered.value) {
+                                try {
+                                    proxy.connect(device)
+                                } catch (t: Throwable) {
+                                    _connectionState.value = ConnectionState.Error("connect post-bond: ${t.message}")
+                                }
+                            }
+                        }
+                    } else if (bondState == BluetoothDevice.BOND_NONE && prevBondState == BluetoothDevice.BOND_BONDING) {
+                        val state = _connectionState.value
+                        if (state is ConnectionState.Connecting && state.device.address == device.address) {
+                            _connectionState.value = ConnectionState.Disconnected
+                        }
+                    }
                 }
             }
         }
@@ -82,21 +126,50 @@ class HidService : Service() {
             stopSelf()
             return
         }
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                startForeground(
-                    NOTIFICATION_ID,
-                    buildNotification(getString(R.string.notification_text_disconnected)),
-                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
-                )
-            } else {
-                startForeground(NOTIFICATION_ID, buildNotification(getString(R.string.notification_text_disconnected)))
+
+        lastNotificationText = getString(R.string.notification_text_disconnected)
+
+        // Observe preference and connection state to manage foreground service status
+        serviceScope.launch(kotlinx.coroutines.Dispatchers.Main) {
+            combine(
+                preferencesRepository.preferences,
+                _connectionState
+            ) { prefs, connState ->
+                prefs.backgroundServiceNotification || connState is ConnectionState.Connected
+            }.collect { shouldBeForeground ->
+                if (shouldBeForeground) {
+                    if (!isForeground) {
+                        try {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                                startForeground(
+                                    NOTIFICATION_ID,
+                                    buildNotification(lastNotificationText),
+                                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
+                                )
+                            } else {
+                                startForeground(NOTIFICATION_ID, buildNotification(lastNotificationText))
+                            }
+                            isForeground = true
+                            Log.i(TAG, "Promoted to foreground service")
+                        } catch (t: Throwable) {
+                            Log.e(TAG, "startForeground failed: ${t.message}")
+                        }
+                    }
+                } else {
+                    if (isForeground) {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                            stopForeground(STOP_FOREGROUND_REMOVE)
+                        } else {
+                            @Suppress("DEPRECATION")
+                            stopForeground(true)
+                        }
+                        isForeground = false
+                        Log.i(TAG, "Demoted from foreground service")
+                    }
+                }
             }
-        } catch (t: Throwable) {
-            Log.e(TAG, "startForeground failed: ${t.message}")
-            stopSelf()
-            return
         }
+
         registerBtStateReceiver()
         if (bluetoothAdapter?.isEnabled == true) {
             registerHidProxy()
@@ -116,6 +189,7 @@ class HidService : Service() {
     override fun onBind(intent: Intent?): IBinder = binder
 
     override fun onDestroy() {
+        serviceScope.cancel()
         try {
             hidDevice?.unregisterApp()
         } catch (t: Throwable) {
@@ -144,7 +218,10 @@ class HidService : Service() {
             _connectionState.value = ConnectionState.Error("Missing BLUETOOTH_CONNECT permission")
             return
         }
-        ensureDiscoverable()
+        val bond = device.bondState
+        if (bond != BluetoothDevice.BOND_BONDED) {
+            ensureDiscoverable()
+        }
         val proxy = hidDevice
         if (proxy == null) {
             pendingTarget = device
@@ -158,10 +235,17 @@ class HidService : Service() {
             return
         }
         try {
-            val bond = device.bondState
             Log.i(TAG, "connectToDevice: addr=${device.address} bond=$bond")
             _connectionState.value = ConnectionState.Connecting(device)
-            proxy.connect(device)
+            if (bond != BluetoothDevice.BOND_BONDED) {
+                Log.i(TAG, "Device not bonded. Creating bond first...")
+                val success = device.createBond()
+                if (!success) {
+                    _connectionState.value = ConnectionState.Error("createBond returned false")
+                }
+            } else {
+                proxy.connect(device)
+            }
         } catch (t: Throwable) {
             _connectionState.value = ConnectionState.Error("connect: ${t.message}")
         }
@@ -181,7 +265,10 @@ class HidService : Service() {
 
     private fun registerBtStateReceiver() {
         if (btStateReceiverRegistered) return
-        val filter = IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED)
+        val filter = IntentFilter().apply {
+            addAction(BluetoothAdapter.ACTION_STATE_CHANGED)
+            addAction(BluetoothDevice.ACTION_BOND_STATE_CHANGED)
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(btStateReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
         } else {
@@ -287,9 +374,10 @@ class HidService : Service() {
                     val curState = try { proxy.getConnectionState(target) } catch (_: Throwable) { BluetoothProfile.STATE_DISCONNECTED }
                     Log.i(TAG, "post-register state=$curState for ${target.address}")
                     if (curState == BluetoothProfile.STATE_CONNECTED) {
+                        lastNotificationText = buildConnectedText(target)
                         _connectionState.value = ConnectionState.Connected(target)
                         reportSender.attach(proxy, target)
-                        updateNotification(buildConnectedText(target))
+                        updateNotification(lastNotificationText)
                     } else if (curState != BluetoothProfile.STATE_CONNECTING) {
                         try {
                             proxy.connect(target)
@@ -308,20 +396,22 @@ class HidService : Service() {
             Log.i(TAG, "onConnectionStateChanged: ${device.address} state=$state")
             when (state) {
                 BluetoothProfile.STATE_CONNECTED -> {
+                    lastNotificationText = buildConnectedText(device)
                     _connectionState.value = ConnectionState.Connected(device)
                     reportSender.attach(hidDevice, device)
-                    updateNotification(buildConnectedText(device))
+                    updateNotification(lastNotificationText)
                 }
                 BluetoothProfile.STATE_CONNECTING -> {
                     _connectionState.value = ConnectionState.Connecting(device)
                 }
                 BluetoothProfile.STATE_DISCONNECTED -> {
+                    lastNotificationText = getString(R.string.notification_text_disconnected)
                     if (_connectionState.value is ConnectionState.Connected ||
                         _connectionState.value is ConnectionState.Connecting) {
                         _connectionState.value = ConnectionState.Disconnected
                     }
                     reportSender.attach(null, null)
-                    updateNotification(getString(R.string.notification_text_disconnected))
+                    updateNotification(lastNotificationText)
                 }
             }
         }
@@ -347,8 +437,10 @@ class HidService : Service() {
         override fun onVirtualCableUnplug(device: BluetoothDevice?) {
             super.onVirtualCableUnplug(device)
             Log.i(TAG, "onVirtualCableUnplug: ${device?.address}")
+            lastNotificationText = getString(R.string.notification_text_disconnected)
             _connectionState.value = ConnectionState.Disconnected
             reportSender.attach(null, null)
+            updateNotification(lastNotificationText)
         }
     }
 
@@ -358,8 +450,11 @@ class HidService : Service() {
     }
 
     private fun updateNotification(text: String) {
-        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        nm.notify(NOTIFICATION_ID, buildNotification(text))
+        lastNotificationText = text
+        if (isForeground) {
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            nm.notify(NOTIFICATION_ID, buildNotification(text))
+        }
     }
 
     private fun buildNotification(text: String): Notification {

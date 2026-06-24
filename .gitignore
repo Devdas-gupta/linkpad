@@ -57,6 +57,7 @@ proguard/
 
 # Private docs / agent state
 CLAUDE.md
+update.md
 .claude/
 .cursor/
 memory/

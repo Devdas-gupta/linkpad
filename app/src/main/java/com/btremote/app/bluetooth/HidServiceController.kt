@@ -62,9 +62,9 @@ class HidServiceController @Inject constructor(
         }
     }
 
-    fun start() {
+    fun start(backgroundRun: Boolean) {
         val intent = Intent(context, HidService::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        if (backgroundRun && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             context.startForegroundService(intent)
         } else {
             context.startService(intent)

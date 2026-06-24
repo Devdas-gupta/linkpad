@@ -17,16 +17,30 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.btremote.app.ui.screens.home.HomeScreen
+import com.btremote.app.ui.screens.onboarding.OnboardingScreen
 import com.btremote.app.ui.screens.settings.SettingsScreen
 
 object Routes {
-    const val HOME = "home"
-    const val SETTINGS = "settings"
+    const val ONBOARDING = "onboarding"
+    const val HOME       = "home"
+    const val SETTINGS   = "settings"
 }
 
 @Composable
-fun BTRemoteNavGraph(navController: NavHostController = rememberNavController()) {
-    NavHost(navController = navController, startDestination = Routes.HOME) {
+fun BTRemoteNavGraph(
+    navController: NavHostController = rememberNavController(),
+    startDestination: String = Routes.HOME
+) {
+    NavHost(navController = navController, startDestination = startDestination) {
+        composable(Routes.ONBOARDING) {
+            OnboardingScreen(
+                onFinish = {
+                    navController.navigate(Routes.HOME) {
+                        popUpTo(Routes.ONBOARDING) { inclusive = true }
+                    }
+                }
+            )
+        }
         composable(Routes.HOME) {
             HomeScreen(
                 onOpenSettings = { navController.navigate(Routes.SETTINGS) }

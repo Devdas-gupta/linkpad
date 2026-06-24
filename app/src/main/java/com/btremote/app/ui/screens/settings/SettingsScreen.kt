@@ -2,6 +2,15 @@ package com.btremote.app.ui.screens.settings
 
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -106,19 +115,35 @@ fun SettingsScreen(
             }
         }
         val current = prefs
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(top = 4.dp, bottom = 24.dp)
-        ) {
-            when (selected) {
-                0 -> if (current != null) ControlsTab(current, viewModel)
-                1 -> if (current != null) MouseTab(current, viewModel)
-                2 -> if (current != null) KeyboardTab(current, viewModel)
-                3 -> ProfilesTab(profilesState, viewModel)
-                4 -> if (current != null) DisplayTab(current, viewModel)
-                5 -> AboutTab()
+        Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
+            AnimatedContent(
+                targetState = selected,
+                transitionSpec = {
+                    if (targetState > initialState) {
+                        (slideInHorizontally { it } + fadeIn(tween(220))) togetherWith
+                        (slideOutHorizontally { -it } + fadeOut(tween(180)))
+                    } else {
+                        (slideInHorizontally { -it } + fadeIn(tween(220))) togetherWith
+                        (slideOutHorizontally { it } + fadeOut(tween(180)))
+                    }
+                },
+                label = "settingsTabContent"
+            ) { sel ->
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(top = 4.dp, bottom = 24.dp)
+                ) {
+                    when (sel) {
+                        0 -> if (current != null) ControlsTab(current, viewModel)
+                        1 -> if (current != null) MouseTab(current, viewModel)
+                        2 -> if (current != null) KeyboardTab(current, viewModel)
+                        3 -> ProfilesTab(profilesState, viewModel)
+                        4 -> if (current != null) DisplayTab(current, viewModel)
+                        5 -> AboutTab()
+                    }
+                }
             }
         }
     }
@@ -130,10 +155,14 @@ private fun ControlsTab(p: AppPreferences, vm: SettingsViewModel) {
     SettingRow(icon = Icons.Outlined.Tune, title = "Show media controls",
         trailing = { Toggle(p.showMediaButtons, vm::setShowMediaButtons) })
     DividerThin()
-    SettingRow(icon = Icons.Outlined.Tune, title = "Show shortcuts row",
-        trailing = { Toggle(p.showShortcuts, vm::setShowShortcuts) })
+    SettingRow(icon = Icons.Outlined.Tune, title = "Show Windows shortcuts",
+        trailing = { Toggle(p.showShortcutsWin, vm::setShowShortcutsWin) })
+    DividerThin()
+    SettingRow(icon = Icons.Outlined.Tune, title = "Show macOS shortcuts",
+        trailing = { Toggle(p.showShortcutsMac, vm::setShowShortcutsMac) })
     DividerThin()
     SettingRow(icon = Icons.Outlined.Tune, title = "Show Android nav buttons",
+        subtitle = "Back, Home, Recents row in Touchpad tab",
         trailing = { Toggle(p.showAndroidNavButtons, vm::setShowAndroidNavButtons) })
 
     SectionLabel("VOLUME BUTTONS")
@@ -168,6 +197,15 @@ private fun MouseTab(p: AppPreferences, vm: SettingsViewModel) {
             options = listOf("Top" to "top", "Bottom" to "bottom"),
             selectedValue = p.mouseButtonsPosition,
             onSelect = vm::setMouseButtonsPosition
+        )
+    }
+
+    SectionLabel("SCROLL STRIP SIDE")
+    Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+        SegmentedRow(
+            options = listOf("Left" to "left", "Right" to "right"),
+            selectedValue = p.scrollBarPosition,
+            onSelect = vm::setScrollBarPosition
         )
     }
 
@@ -403,6 +441,13 @@ private fun DisplayTab(p: AppPreferences, vm: SettingsViewModel) {
     DividerThin()
     SettingRow(icon = Icons.Outlined.Brightness6, title = "Fullscreen mode",
         trailing = { Toggle(p.fullscreenMode, vm::setFullscreenMode) })
+    DividerThin()
+    SettingRow(
+        icon = Icons.Outlined.Brightness6,
+        title = "Run in background",
+        subtitle = "Keep connected with a status bar notification",
+        trailing = { Toggle(p.backgroundServiceNotification, vm::setBackgroundServiceNotification) }
+    )
 }
 
 @Composable
@@ -436,6 +481,21 @@ private fun AboutTab() {
                     color = MaterialTheme.colorScheme.primary
                 )
                 Spacer(Modifier.height(4.dp))
+                // Show version number from PackageInfo
+                val versionName = remember {
+                    runCatching {
+                        val info = context.packageManager.getPackageInfo(context.packageName, 0)
+                        val code = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
+                            info.longVersionCode else @Suppress("DEPRECATION") info.versionCode.toLong()
+                        "v${info.versionName} (Build $code)"
+                    }.getOrDefault("Unknown version")
+                }
+                Text(
+                    versionName,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
+                )
+                Spacer(Modifier.height(6.dp))
                 Text(
                     "Wireless keyboard, mouse and media remote over Bluetooth.",
                     style = MaterialTheme.typography.bodyMedium,
@@ -555,20 +615,23 @@ private fun SliderSetting(
     range: IntRange,
     onChange: (Int) -> Unit
 ) {
+    var localValue by remember(value) { androidx.compose.runtime.mutableFloatStateOf(value.toFloat()) }
+
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(icon, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(12.dp))
             Text(title, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
             Text(
-                "$value",
+                "${localValue.toInt()}",
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary
             )
         }
         Slider(
-            value = value.toFloat(),
-            onValueChange = { onChange(it.toInt()) },
+            value = localValue,
+            onValueChange = { localValue = it },
+            onValueChangeFinished = { onChange(localValue.toInt()) },
             valueRange = range.first.toFloat()..range.last.toFloat(),
             steps = (range.last - range.first - 1).coerceAtLeast(0),
             colors = SliderDefaults.colors(

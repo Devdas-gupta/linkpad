@@ -90,6 +90,8 @@ object HidDescriptors {
         0x81.toByte(), 0x06,           //     Input (Data, Var, Rel)
         0x05, 0x0C,                    //     Usage Page (Consumer) — for AC Pan
         0x0A, 0x38, 0x02,              //     Usage (AC Pan, 0x0238) horizontal scroll
+        0x15, 0x81.toByte(),           //     Logical Min (-127)
+        0x25, 0x7F,                    //     Logical Max (127)
         0x95.toByte(), 0x01,           //     Report Count (1)
         0x81.toByte(), 0x06,           //     Input (Data, Var, Rel)
         0xC0.toByte(),                 //   End Collection (Physical)
@@ -185,6 +187,8 @@ enum class ConsumerUsage(val code: Int) {
     MUTE(0xE2),
     BRIGHTNESS_UP(0x6F),
     BRIGHTNESS_DOWN(0x70),
+    POWER(0x030),
+    INPUT_SELECT(0x060),
     AC_HOME(0x223),
     AC_BACK(0x224)
 }

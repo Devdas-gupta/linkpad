@@ -45,4 +45,22 @@ class TouchpadViewModel @Inject constructor(
         if (!sender.isReady()) return
         viewModelScope.launch { sender.tapMouseClick(mask.mask) }
     }
+
+    fun sendConsumer(usage: com.btremote.app.bluetooth.ConsumerUsage) {
+        val sender = controller.reportSender
+        if (!sender.isReady()) return
+        viewModelScope.launch { sender.sendConsumerKey(usage) }
+    }
+
+    /** Sends Super+Tab — standard HID mapping for app-switcher / Recents. */
+    fun recentApps() {
+        val sender = controller.reportSender
+        if (!sender.isReady()) return
+        viewModelScope.launch {
+            sender.pressAndRelease(
+                com.btremote.app.bluetooth.HidKeyCode.TAB,
+                com.btremote.app.bluetooth.MODIFIER_LEFT_GUI
+            )
+        }
+    }
 }

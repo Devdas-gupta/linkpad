@@ -3,9 +3,17 @@ package com.btremote.app.ui.screens.connect
 import android.Manifest
 import android.bluetooth.BluetoothAdapter
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -49,8 +57,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -64,11 +75,11 @@ fun ConnectScreen(
     modifier: Modifier = Modifier,
     viewModel: ConnectViewModel = hiltViewModel()
 ) {
-    val results by viewModel.scanResults.collectAsStateWithLifecycle()
-    val scanning by viewModel.scanning.collectAsStateWithLifecycle()
-    val state by viewModel.connectionState.collectAsStateWithLifecycle()
-    val paired by viewModel.pairedHistory.collectAsStateWithLifecycle()
-    val btEnabled by viewModel.bluetoothEnabled.collectAsStateWithLifecycle()
+    val results     by viewModel.scanResults.collectAsStateWithLifecycle()
+    val scanning    by viewModel.scanning.collectAsStateWithLifecycle()
+    val state       by viewModel.connectionState.collectAsStateWithLifecycle()
+    val paired      by viewModel.pairedHistory.collectAsStateWithLifecycle()
+    val btEnabled   by viewModel.bluetoothEnabled.collectAsStateWithLifecycle()
 
     var permissionGranted by remember { mutableStateOf(true) }
     val scanLauncher = rememberLauncherForActivityResult(
@@ -80,19 +91,16 @@ fun ConnectScreen(
 
     val enableBtLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
-    ) { _ ->
-        viewModel.refreshBluetoothEnabled()
-    }
+    ) { _ -> viewModel.refreshBluetoothEnabled() }
 
-    LaunchedEffect(Unit) {
-        viewModel.refreshBluetoothEnabled()
-    }
+    LaunchedEffect(Unit) { viewModel.refreshBluetoothEnabled() }
+    DisposableEffect(Unit) { onDispose { viewModel.stopScan() } }
 
-    DisposableEffect(Unit) {
-        onDispose { viewModel.stopScan() }
-    }
-
-    Column(modifier = modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp)) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp, vertical = 12.dp)
+    ) {
         if (!btEnabled) {
             EnableBluetoothCard(onEnable = {
                 enableBtLauncher.launch(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE))
@@ -100,16 +108,24 @@ fun ConnectScreen(
             Spacer(Modifier.height(12.dp))
         }
 
+        if (!permissionGranted) {
+            PermissionDeniedCard()
+            Spacer(Modifier.height(12.dp))
+        }
+
+        // ── Scan button with pulsing animation ──
         ScanButton(
             scanning = scanning,
-            enabled = btEnabled,
-            onClick = {
+            enabled  = btEnabled,
+            onClick  = {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    scanLauncher.launch(arrayOf(
-                        Manifest.permission.BLUETOOTH_CONNECT,
-                        Manifest.permission.BLUETOOTH_SCAN,
-                        Manifest.permission.BLUETOOTH_ADVERTISE
-                    ))
+                    scanLauncher.launch(
+                        arrayOf(
+                            Manifest.permission.BLUETOOTH_CONNECT,
+                            Manifest.permission.BLUETOOTH_SCAN,
+                            Manifest.permission.BLUETOOTH_ADVERTISE
+                        )
+                    )
                 } else {
                     viewModel.startScan()
                 }
@@ -137,8 +153,8 @@ fun ConnectScreen(
             Spacer(Modifier.height(8.dp))
             paired.forEach { entry ->
                 PairedRow(entry,
-                    onClick = { viewModel.reconnect(entry) },
-                    onForget = { viewModel.forget(entry) })
+                    onClick   = { viewModel.reconnect(entry) },
+                    onForget  = { viewModel.forget(entry) })
                 Spacer(Modifier.height(8.dp))
             }
         }
@@ -150,12 +166,23 @@ fun ConnectScreen(
         Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
             if (results.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    if (scanning) CircularProgressIndicator(strokeWidth = 2.dp)
-                    else Text(
-                        "No devices yet — tap Scan",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
+                    if (scanning) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            ScanningRings()
+                            Spacer(Modifier.height(16.dp))
+                            Text(
+                                "Scanning for devices…",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+                    } else {
+                        Text(
+                            "No devices found — tap Scan",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
                 }
             } else {
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -167,6 +194,68 @@ fun ConnectScreen(
         }
     }
 }
+
+// ── Pulsing concentric rings shown while scanning ──────────────────────────
+
+@Composable
+private fun ScanningRings() {
+    val transition = rememberInfiniteTransition(label = "scanRings")
+    val scale1 by transition.animateFloat(
+        initialValue = 0.3f, targetValue = 1.4f,
+        animationSpec = infiniteRepeatable(tween(1600, easing = LinearEasing)),
+        label = "ring1"
+    )
+    val alpha1 by transition.animateFloat(
+        initialValue = 0.8f, targetValue = 0f,
+        animationSpec = infiniteRepeatable(tween(1600, easing = LinearEasing)),
+        label = "ring1a"
+    )
+    val scale2 by transition.animateFloat(
+        initialValue = 0.3f, targetValue = 1.4f,
+        animationSpec = infiniteRepeatable(tween(1600, 600, easing = LinearEasing)),
+        label = "ring2"
+    )
+    val alpha2 by transition.animateFloat(
+        initialValue = 0.8f, targetValue = 0f,
+        animationSpec = infiniteRepeatable(tween(1600, 600, easing = LinearEasing)),
+        label = "ring2a"
+    )
+
+    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(80.dp)) {
+        Box(
+            modifier = Modifier
+                .size(80.dp)
+                .scale(scale2)
+                .alpha(alpha2)
+                .clip(CircleShape)
+                .border(1.5.dp, MaterialTheme.colorScheme.primary, CircleShape)
+        )
+        Box(
+            modifier = Modifier
+                .size(80.dp)
+                .scale(scale1)
+                .alpha(alpha1)
+                .clip(CircleShape)
+                .border(1.5.dp, MaterialTheme.colorScheme.primary, CircleShape)
+        )
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                Icons.Outlined.BluetoothSearching,
+                null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+    }
+}
+
+// ── Scan / Stop button ─────────────────────────────────────────────────────
 
 @Composable
 private fun ScanButton(scanning: Boolean, enabled: Boolean, onClick: () -> Unit, onStop: () -> Unit) {
@@ -184,7 +273,7 @@ private fun ScanButton(scanning: Boolean, enabled: Boolean, onClick: () -> Unit,
                 when {
                     !enabled -> "BLUETOOTH OFF"
                     scanning -> "SCANNING…"
-                    else -> "SCAN FOR DEVICES"
+                    else     -> "SCAN FOR DEVICES"
                 },
                 style = MaterialTheme.typography.labelLarge,
                 color = Color.White
@@ -215,19 +304,14 @@ private fun EnableBluetoothCard(onEnable: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
-                Icons.Outlined.BluetoothDisabled,
-                null,
+                Icons.Outlined.BluetoothDisabled, null,
                 tint = MaterialTheme.colorScheme.error,
                 modifier = Modifier.size(28.dp)
             )
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text("Bluetooth is off", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
-                Text(
-                    "Tap to enable and connect",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Text("Tap to enable and connect", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Button(
                 onClick = onEnable,
@@ -265,24 +349,14 @@ private fun DeviceRow(device: DiscoveredDevice, onClick: () -> Unit) {
             BluetoothBadge()
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    device.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    device.address,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Text(device.name, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+                Text(device.address, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             if (device.rssi != 0) {
                 SignalStrength(device.rssi)
                 Spacer(Modifier.width(10.dp))
             }
-            TextButton(
-                onClick = onClick
-            ) {
+            TextButton(onClick = onClick) {
                 Text("CONNECT", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
             }
         }
@@ -326,23 +400,17 @@ private fun BluetoothBadge() {
             .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
         contentAlignment = Alignment.Center
     ) {
-        Icon(
-            Icons.Outlined.Bluetooth,
-            null,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(22.dp)
-        )
+        Icon(Icons.Outlined.Bluetooth, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
     }
 }
 
 @Composable
 private fun SignalStrength(rssi: Int) {
-    // rssi typically -100 (weak) to -40 (strong)
     val bars = when {
         rssi >= -55 -> 3
         rssi >= -75 -> 2
         rssi >= -90 -> 1
-        else -> 0
+        else        -> 0
     }
     Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
         listOf(6, 10, 14).forEachIndexed { idx, h ->
@@ -357,6 +425,52 @@ private fun SignalStrength(rssi: Int) {
                         else MaterialTheme.colorScheme.outline
                     )
             )
+        }
+    }
+}
+
+@Composable
+private fun PermissionDeniedCard() {
+    val context = LocalContext.current
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Outlined.BluetoothDisabled, null,
+                tint = MaterialTheme.colorScheme.error,
+                modifier = Modifier.size(28.dp)
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "Bluetooth permission denied",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    "Open Settings and grant Bluetooth permission to scan for devices.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Button(
+                onClick = {
+                    val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                        .apply { data = Uri.fromParts("package", context.packageName, null) }
+                    context.startActivity(intent)
+                },
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+            ) {
+                Text("SETTINGS", style = MaterialTheme.typography.labelLarge, color = Color.White)
+            }
         }
     }
 }

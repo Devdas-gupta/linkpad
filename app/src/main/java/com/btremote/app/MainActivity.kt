@@ -14,6 +14,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.btremote.app.bluetooth.ConnectionState
@@ -25,6 +26,7 @@ import com.btremote.app.ui.theme.BTRemoteTheme
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 @AndroidEntryPoint
@@ -67,8 +69,21 @@ class MainActivity : ComponentActivity() {
                 applyFullscreen(prefs?.fullscreenMode ?: false)
             }
 
+            val onboardingDone by preferencesRepository.preferences
+                .map { it.onboardingComplete }
+                .collectAsState(initial = null)
+
             BTRemoteTheme(themeMode = themeMode) {
-                BTRemoteNavGraph()
+                val start = when (onboardingDone) {
+                    false -> com.btremote.app.ui.navigation.Routes.ONBOARDING
+                    true  -> com.btremote.app.ui.navigation.Routes.HOME
+                    null  -> null
+                }
+                if (start != null) {
+                    androidx.compose.runtime.key(start) {
+                        BTRemoteNavGraph(startDestination = start)
+                    }
+                }
             }
         }
     }
@@ -90,9 +105,6 @@ class MainActivity : ComponentActivity() {
                     Manifest.permission.BLUETOOTH_SCAN,
                     Manifest.permission.BLUETOOTH_ADVERTISE
                 )
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    toRequest.add(Manifest.permission.POST_NOTIFICATIONS)
-                }
                 permLauncher.launch(toRequest.toTypedArray())
             }
         } else {
@@ -109,7 +121,10 @@ class MainActivity : ComponentActivity() {
     private fun startServiceOnce() {
         if (serviceStarted) return
         serviceStarted = true
-        controller.start()
+        lifecycleScope.launch {
+            val bgRun = preferencesRepository.preferences.first().backgroundServiceNotification
+            controller.start(bgRun)
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
