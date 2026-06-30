@@ -16,6 +16,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -30,11 +31,15 @@ class HidReportSender @Inject constructor() {
     @Volatile
     private var connectedDevice: BluetoothDevice? = null
 
-    @Volatile
-    private var mouseButtons: Int = 0
+    // BUG 17 — Use AtomicInteger for mouseButtons to ensure atomic read-modify-write
+    private val mouseButtonsAtomic = AtomicInteger(0)
 
     @Volatile
     private var lastReportSentTime: Long = 0L
+
+    // BUG 13 — Track consecutive send failures for reconnect triggering
+    private val consecutiveFailures = AtomicInteger(0)
+    private val maxConsecutiveFailures = 5
 
     private val accumX = AtomicInteger(0)
     private val accumY = AtomicInteger(0)
@@ -43,11 +48,16 @@ class HidReportSender @Inject constructor() {
     private val mouseDirty = AtomicBoolean(false)
     private val coalesceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var coalesceJob: Job? = null
+    // BUG 12 — Reduce keep-alive to 200ms to prevent sniff mode on Realtek/MediaTek chipsets
     private val mouseRateMs = 8L  // ~125 Hz — matches commercial HID device polling rate
+    private val keepAliveMs = 200L  // Reduced from 500ms: prevents chipset sniff mode entry
 
     private val kbMutex = Mutex()
     private val kbSlots = IntArray(6)
     @Volatile private var kbModifiers: Int = 0
+
+    // Callback for connection state changes triggered by consecutive failures
+    var onConsecutiveFailures: (() -> Unit)? = null
 
     fun attach(hidDevice: BluetoothHidDevice?, device: BluetoothDevice?) {
         this.hidDevice = hidDevice
@@ -56,7 +66,7 @@ class HidReportSender @Inject constructor() {
             startCoalesceLoop()
             coalesceScope.launch {
                 delay(150)
-                sendMouseReport(0, 0, 0, 0)
+                sendMouseReport(mouseButtonsAtomic.get(), 0, 0, 0, 0)
                 delay(50)
                 sendBlankKeyboardReport()
                 delay(50)
@@ -64,11 +74,15 @@ class HidReportSender @Inject constructor() {
             }
         } else {
             stopCoalesceLoop()
-            mouseButtons = 0
-            kbSlots.fill(0)
-            kbModifiers = 0
+            // BUG 18 — Wrap kbSlots.fill(0) inside kbMutex to prevent state corruption
+            runBlocking { kbMutex.withLock {
+                kbSlots.fill(0)
+                kbModifiers = 0
+            } }
+            mouseButtonsAtomic.set(0)
             accumX.set(0); accumY.set(0); accumScroll.set(0); accumHScroll.set(0)
             mouseDirty.set(false)
+            consecutiveFailures.set(0)
         }
     }
 
@@ -80,31 +94,40 @@ class HidReportSender @Inject constructor() {
             lastReportSentTime = System.currentTimeMillis()
             while (true) {
                 if (mouseDirty.compareAndSet(true, false)) {
-                    val rawX = accumX.get()
-                    val rawY = accumY.get()
-                    val rawScroll = accumScroll.get()
-                    val rawHScroll = accumHScroll.get()
+                    // BUG 7 — Use getAndSet(0) to atomically drain accumulator
+                    // avoids over-subtraction race between queueMouseMove and coalesce loop
+                    val rawX = accumX.getAndSet(0)
+                    val rawY = accumY.getAndSet(0)
+                    val rawScroll = accumScroll.getAndSet(0)
+                    val rawHScroll = accumHScroll.getAndSet(0)
 
                     val dx = rawX.coerceIn(-127, 127)
                     val dy = rawY.coerceIn(-127, 127)
                     val sc = rawScroll.coerceIn(-127, 127)
                     val hs = rawHScroll.coerceIn(-127, 127)
 
-                    accumX.addAndGet(-dx)
-                    accumY.addAndGet(-dy)
-                    accumScroll.addAndGet(-sc)
-                    accumHScroll.addAndGet(-hs)
+                    // Add back any excess that was clamped
+                    val excessX = rawX - dx
+                    val excessY = rawY - dy
+                    val excessSc = rawScroll - sc
+                    val excessHs = rawHScroll - hs
+
+                    if (excessX != 0) accumX.addAndGet(excessX)
+                    if (excessY != 0) accumY.addAndGet(excessY)
+                    if (excessSc != 0) accumScroll.addAndGet(excessSc)
+                    if (excessHs != 0) accumHScroll.addAndGet(excessHs)
 
                     if (accumX.get() != 0 || accumY.get() != 0 || accumScroll.get() != 0 || accumHScroll.get() != 0) {
                         mouseDirty.set(true)
                     }
 
-                    sendMouseReport(mouseButtons, dx, dy, sc, hs)
+                    sendMouseReport(mouseButtonsAtomic.get(), dx, dy, sc, hs)
                 } else {
                     val now = System.currentTimeMillis()
-                    if (now - lastReportSentTime >= 500) {
-                        // Send keep-alive empty mouse report to prevent host (especially Windows) from dropping into sniff mode
-                        sendMouseReport(mouseButtons, 0, 0, 0, 0)
+                    // BUG 12 — Use 200ms keep-alive instead of 500ms
+                    if (now - lastReportSentTime >= keepAliveMs) {
+                        // Send keep-alive empty mouse report to prevent host from dropping into sniff mode
+                        sendMouseReport(mouseButtonsAtomic.get(), 0, 0, 0, 0)
                     }
                 }
                 delay(mouseRateMs)
@@ -138,16 +161,19 @@ class HidReportSender @Inject constructor() {
 
     @SuppressLint("MissingPermission")
     suspend fun sendMouseClick(buttonMask: Int, down: Boolean) {
-        mouseButtons = if (down) (mouseButtons or buttonMask) else (mouseButtons and buttonMask.inv())
+        // BUG 17 — Atomic getAndUpdate for mouseButtons
+        mouseButtonsAtomic.getAndUpdate { current ->
+            if (down) current or buttonMask else current and buttonMask.inv()
+        }
         flushMouseImmediate()
     }
 
     @SuppressLint("MissingPermission")
     suspend fun tapMouseClick(buttonMask: Int, holdMs: Long = 50L) {
-        mouseButtons = mouseButtons or buttonMask
+        mouseButtonsAtomic.getAndUpdate { it or buttonMask }
         flushMouseImmediate()
         delay(holdMs)
-        mouseButtons = mouseButtons and buttonMask.inv()
+        mouseButtonsAtomic.getAndUpdate { it and buttonMask.inv() }
         flushMouseImmediate()
     }
 
@@ -157,7 +183,7 @@ class HidReportSender @Inject constructor() {
         val sc = accumScroll.getAndSet(0)
         val hs = accumHScroll.getAndSet(0)
         mouseDirty.set(false)
-        sendMouseReport(mouseButtons, dx, dy, sc, hs)
+        sendMouseReport(mouseButtonsAtomic.get(), dx, dy, sc, hs)
     }
 
     @SuppressLint("MissingPermission")
@@ -230,6 +256,7 @@ class HidReportSender @Inject constructor() {
         payload[0] = (kbModifiers and 0xFF).toByte()
         payload[1] = 0x00
         for (i in 0 until 6) payload[2 + i] = (kbSlots[i] and 0xFF).toByte()
+        Log.d(TAG, "sendKeyboardState: mod=${payload[0].toInt() and 0xFF} slots=${payload.slice(2..7).map { it.toInt() and 0xFF }}")
         return safeSend { hid.sendReport(device, HidDescriptors.REPORT_ID_KEYBOARD.toInt(), payload) }
     }
 
@@ -259,24 +286,43 @@ class HidReportSender @Inject constructor() {
         return safeSend { hid.sendReport(device, HidDescriptors.REPORT_ID_CONSUMER.toInt(), ByteArray(2)) }
     }
 
+    // BUG 13 — Count consecutive failures; after 5, trigger reconnect callback
     private inline fun safeSend(crossinline block: () -> Boolean): Boolean = try {
         val success = block()
         if (success) {
             lastReportSentTime = System.currentTimeMillis()
+            consecutiveFailures.set(0)
+        } else {
+            val failures = consecutiveFailures.incrementAndGet()
+            Log.w(TAG, "sendReport returned false (failure #$failures)")
+            if (failures >= maxConsecutiveFailures) {
+                Log.e(TAG, "Max consecutive failures reached — triggering reconnect")
+                consecutiveFailures.set(0)
+                onConsecutiveFailures?.invoke()
+            }
         }
         success
     } catch (t: Throwable) {
         Log.w(TAG, "sendReport: ${t.message}")
+        val failures = consecutiveFailures.incrementAndGet()
+        if (failures >= maxConsecutiveFailures) {
+            Log.e(TAG, "Max consecutive failures reached — triggering reconnect")
+            consecutiveFailures.set(0)
+            onConsecutiveFailures?.invoke()
+        }
         false
     }
 
     private fun clamp8(value: Int): Byte = min(127, max(-127, value)).toByte()
 
     fun resetState() {
-        mouseButtons = 0
+        mouseButtonsAtomic.set(0)
         accumX.set(0); accumY.set(0); accumScroll.set(0); accumHScroll.set(0)
         mouseDirty.set(false)
-        kbSlots.fill(0)
-        kbModifiers = 0
+        // BUG 18 — Use runBlocking + kbMutex for thread-safe reset
+        runBlocking { kbMutex.withLock {
+            kbSlots.fill(0)
+            kbModifiers = 0
+        } }
     }
 }

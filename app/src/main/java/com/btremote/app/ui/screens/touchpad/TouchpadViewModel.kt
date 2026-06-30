@@ -22,7 +22,9 @@ class TouchpadViewModel @Inject constructor(
     val preferences: StateFlow<AppPreferences?> = prefs.preferences
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
+    // BUG 8 — Guard move() with isReady() to match buttonPress()/tapClick() behavior
     fun move(dx: Int, dy: Int) {
+        if (!controller.reportSender.isReady()) return
         controller.reportSender.queueMouseMove(dx, dy)
     }
 

@@ -81,7 +81,8 @@ fun ConnectScreen(
     val paired      by viewModel.pairedHistory.collectAsStateWithLifecycle()
     val btEnabled   by viewModel.bluetoothEnabled.collectAsStateWithLifecycle()
 
-    var permissionGranted by remember { mutableStateOf(true) }
+    // BUG 39 — permissionGranted initializes to false (was true, hid denied state on launch)
+    var permissionGranted by remember { mutableStateOf(false) }
     val scanLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { res ->
@@ -93,7 +94,21 @@ fun ConnectScreen(
         ActivityResultContracts.StartActivityForResult()
     ) { _ -> viewModel.refreshBluetoothEnabled() }
 
-    LaunchedEffect(Unit) { viewModel.refreshBluetoothEnabled() }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    LaunchedEffect(Unit) {
+        viewModel.refreshBluetoothEnabled()
+        // BUG 39 — Check if permissions are already granted at runtime
+        permissionGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            androidx.core.content.ContextCompat.checkSelfPermission(
+                context, Manifest.permission.BLUETOOTH_CONNECT
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED &&
+            androidx.core.content.ContextCompat.checkSelfPermission(
+                context, Manifest.permission.BLUETOOTH_SCAN
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        } else {
+            true
+        }
+    }
     DisposableEffect(Unit) { onDispose { viewModel.stopScan() } }
 
     Column(
@@ -119,11 +134,11 @@ fun ConnectScreen(
             enabled  = btEnabled,
             onClick  = {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    // BUG 14 — BLUETOOTH_ADVERTISE removed (unrelated to HID scanning)
                     scanLauncher.launch(
                         arrayOf(
                             Manifest.permission.BLUETOOTH_CONNECT,
-                            Manifest.permission.BLUETOOTH_SCAN,
-                            Manifest.permission.BLUETOOTH_ADVERTISE
+                            Manifest.permission.BLUETOOTH_SCAN
                         )
                     )
                 } else {
@@ -196,6 +211,7 @@ fun ConnectScreen(
 }
 
 // ── Pulsing concentric rings shown while scanning ──────────────────────────
+// BUG 43 — 3 rings with staggered delays for premium sonar animation
 
 @Composable
 private fun ScanningRings() {
@@ -212,16 +228,35 @@ private fun ScanningRings() {
     )
     val scale2 by transition.animateFloat(
         initialValue = 0.3f, targetValue = 1.4f,
-        animationSpec = infiniteRepeatable(tween(1600, 600, easing = LinearEasing)),
+        animationSpec = infiniteRepeatable(tween(1600, 533, easing = LinearEasing)),
         label = "ring2"
     )
     val alpha2 by transition.animateFloat(
         initialValue = 0.8f, targetValue = 0f,
-        animationSpec = infiniteRepeatable(tween(1600, 600, easing = LinearEasing)),
+        animationSpec = infiniteRepeatable(tween(1600, 533, easing = LinearEasing)),
         label = "ring2a"
+    )
+    // Ring 3 — 1/3 phase offset for even stagger
+    val scale3 by transition.animateFloat(
+        initialValue = 0.3f, targetValue = 1.4f,
+        animationSpec = infiniteRepeatable(tween(1600, 1066, easing = LinearEasing)),
+        label = "ring3"
+    )
+    val alpha3 by transition.animateFloat(
+        initialValue = 0.8f, targetValue = 0f,
+        animationSpec = infiniteRepeatable(tween(1600, 1066, easing = LinearEasing)),
+        label = "ring3a"
     )
 
     Box(contentAlignment = Alignment.Center, modifier = Modifier.size(80.dp)) {
+        Box(
+            modifier = Modifier
+                .size(80.dp)
+                .scale(scale3)
+                .alpha(alpha3)
+                .clip(CircleShape)
+                .border(1.5.dp, MaterialTheme.colorScheme.primary, CircleShape)
+        )
         Box(
             modifier = Modifier
                 .size(80.dp)

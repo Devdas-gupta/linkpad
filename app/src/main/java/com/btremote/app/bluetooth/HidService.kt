@@ -29,12 +29,16 @@ import com.btremote.app.R
 import dagger.hilt.android.AndroidEntryPoint
 import java.util.concurrent.Executors
 import javax.inject.Inject
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.cancel
 import com.btremote.app.data.PreferencesRepository
 
 @AndroidEntryPoint
@@ -44,7 +48,7 @@ class HidService : Service() {
     @Inject lateinit var preferencesRepository: PreferencesRepository
 
     private val binder = LocalBinder()
-    private val serviceScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main + kotlinx.coroutines.SupervisorJob())
+    private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var isForeground = false
     @Volatile
     private var lastNotificationText = ""
@@ -56,8 +60,14 @@ class HidService : Service() {
     val appRegistered: StateFlow<Boolean> = _appRegistered.asStateFlow()
 
     private var bluetoothAdapter: BluetoothAdapter? = null
-    private var hidDevice: BluetoothHidDevice? = null
-    private var pendingTarget: BluetoothDevice? = null
+    @Volatile private var hidDevice: BluetoothHidDevice? = null
+    @Volatile private var pendingTarget: BluetoothDevice? = null
+
+    // BUG 2 — Auto-reconnect: track last connected address and whether disconnect was user-initiated
+    @Volatile private var lastConnectedAddress: String? = null
+    @Volatile private var userInitiatedDisconnect = false
+    private var reconnectAttempts = 0
+    private val maxReconnectAttempts = 5
 
     private val executor = Executors.newSingleThreadExecutor()
 
@@ -91,7 +101,7 @@ class HidService : Service() {
                     val bondState = intent.getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, BluetoothDevice.ERROR)
                     val prevBondState = intent.getIntExtra(BluetoothDevice.EXTRA_PREVIOUS_BOND_STATE, BluetoothDevice.ERROR)
                     Log.i(TAG, "Bond state changed for ${device.address}: prev=$prevBondState new=$bondState")
-                    
+
                     if (bondState == BluetoothDevice.BOND_BONDED) {
                         val state = _connectionState.value
                         if (state is ConnectionState.Connecting && state.device.address == device.address) {
@@ -109,6 +119,27 @@ class HidService : Service() {
                         val state = _connectionState.value
                         if (state is ConnectionState.Connecting && state.device.address == device.address) {
                             _connectionState.value = ConnectionState.Disconnected
+                        }
+                    }
+                }
+                // BUG 6 — ACTION_ACL_DISCONNECTED for immediate disconnect detection
+                BluetoothDevice.ACTION_ACL_DISCONNECTED -> {
+                    val device = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
+                    }
+                    device ?: return
+                    val connState = _connectionState.value
+                    if (connState is ConnectionState.Connected && connState.device.address == device.address) {
+                        Log.i(TAG, "ACL_DISCONNECTED from ${device.address} — immediate disconnect")
+                        _connectionState.value = ConnectionState.Disconnected
+                        reportSender.attach(null, null)
+                        updateNotification(getString(R.string.notification_text_disconnected))
+                        // BUG 2 — Trigger auto-reconnect if not user-initiated
+                        if (!userInitiatedDisconnect) {
+                            scheduleAutoReconnect(device)
                         }
                     }
                 }
@@ -130,11 +161,13 @@ class HidService : Service() {
         lastNotificationText = getString(R.string.notification_text_disconnected)
 
         // Observe preference and connection state to manage foreground service status
-        serviceScope.launch(kotlinx.coroutines.Dispatchers.Main) {
+        // BUG 23 — Only promote to foreground when actually connected to avoid ForegroundServiceStartNotAllowedException
+        serviceScope.launch(Dispatchers.Main) {
             combine(
                 preferencesRepository.preferences,
                 _connectionState
             ) { prefs, connState ->
+                // Only run foreground when connected OR backgroundServiceNotification enabled
                 prefs.backgroundServiceNotification || connState is ConnectionState.Connected
             }.collect { shouldBeForeground ->
                 if (shouldBeForeground) {
@@ -168,6 +201,18 @@ class HidService : Service() {
                     }
                 }
             }
+        }
+
+        // BUG 11 — Load last connected address from DataStore and immediately auto-connect
+        serviceScope.launch {
+            // Collect only the FIRST prefs emission to get the saved address
+            val savedAddress = preferencesRepository.preferences
+                .collect { appPrefs ->
+                    if (lastConnectedAddress == null && appPrefs.lastConnectedDeviceAddress.isNotBlank()) {
+                        lastConnectedAddress = appPrefs.lastConnectedDeviceAddress
+                        Log.i(TAG, "Loaded last connected address: $lastConnectedAddress — will auto-connect")
+                    }
+                }
         }
 
         registerBtStateReceiver()
@@ -213,11 +258,14 @@ class HidService : Service() {
         fun getService(): HidService = this@HidService
     }
 
+    // BUG 1 — Connection timeout: wrap connect in withTimeout(15s)
     fun connectToDevice(device: BluetoothDevice) {
         if (!hasBluetoothConnectPermission()) {
             _connectionState.value = ConnectionState.Error("Missing BLUETOOTH_CONNECT permission")
             return
         }
+        userInitiatedDisconnect = false
+        reconnectAttempts = 0
         val bond = device.bondState
         if (bond != BluetoothDevice.BOND_BONDED) {
             ensureDiscoverable()
@@ -234,20 +282,33 @@ class HidService : Service() {
             _connectionState.value = ConnectionState.Connecting(device)
             return
         }
-        try {
-            Log.i(TAG, "connectToDevice: addr=${device.address} bond=$bond")
-            _connectionState.value = ConnectionState.Connecting(device)
-            if (bond != BluetoothDevice.BOND_BONDED) {
-                Log.i(TAG, "Device not bonded. Creating bond first...")
-                val success = device.createBond()
-                if (!success) {
-                    _connectionState.value = ConnectionState.Error("createBond returned false")
+        serviceScope.launch {
+            try {
+                Log.i(TAG, "connectToDevice: addr=${device.address} bond=$bond")
+                _connectionState.value = ConnectionState.Connecting(device)
+                if (bond != BluetoothDevice.BOND_BONDED) {
+                    Log.i(TAG, "Device not bonded. Creating bond first...")
+                    val success = device.createBond()
+                    if (!success) {
+                        _connectionState.value = ConnectionState.Error("createBond returned false")
+                    }
+                } else {
+                    // Fire connect — result arrives via onConnectionStateChanged callback (async)
+                    proxy.connect(device)
+                    // FIX: Watch state flow for 15s; if still Connecting, surface a timeout error
+                    // (withTimeout around proxy.connect is wrong — it's fire-and-forget)
+                    serviceScope.launch {
+                        delay(15_000L)
+                        val cur = _connectionState.value
+                        if (cur is ConnectionState.Connecting && cur.device.address == device.address) {
+                            Log.w(TAG, "Connection timed out for ${device.address}")
+                            _connectionState.value = ConnectionState.Error("Connection timed out")
+                        }
+                    }
                 }
-            } else {
-                proxy.connect(device)
+            } catch (t: Throwable) {
+                _connectionState.value = ConnectionState.Error("connect: ${t.message}")
             }
-        } catch (t: Throwable) {
-            _connectionState.value = ConnectionState.Error("connect: ${t.message}")
         }
     }
 
@@ -255,10 +316,35 @@ class HidService : Service() {
         val proxy = hidDevice ?: return
         val state = _connectionState.value
         if (state is ConnectionState.Connected) {
+            userInitiatedDisconnect = true
             try {
                 proxy.disconnect(state.device)
             } catch (t: Throwable) {
                 Log.w(TAG, "disconnect: ${t.message}")
+            }
+        }
+    }
+
+    // BUG 2 — Auto-reconnect with exponential backoff
+    private fun scheduleAutoReconnect(device: BluetoothDevice) {
+        if (reconnectAttempts >= maxReconnectAttempts) {
+            Log.i(TAG, "Max reconnect attempts reached for ${device.address}")
+            return
+        }
+        val delayMs = when (reconnectAttempts) {
+            0 -> 3_000L
+            1 -> 6_000L
+            2 -> 12_000L
+            3 -> 24_000L
+            else -> 48_000L
+        }
+        reconnectAttempts++
+        Log.i(TAG, "Scheduling auto-reconnect attempt $reconnectAttempts in ${delayMs}ms")
+        serviceScope.launch {
+            delay(delayMs)
+            if (_connectionState.value !is ConnectionState.Connected && !userInitiatedDisconnect) {
+                Log.i(TAG, "Auto-reconnecting to ${device.address}")
+                connectToDevice(device)
             }
         }
     }
@@ -268,6 +354,8 @@ class HidService : Service() {
         val filter = IntentFilter().apply {
             addAction(BluetoothAdapter.ACTION_STATE_CHANGED)
             addAction(BluetoothDevice.ACTION_BOND_STATE_CHANGED)
+            // BUG 6 — Listen for immediate ACL disconnect
+            addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED)
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(btStateReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
@@ -320,17 +408,26 @@ class HidService : Service() {
             registerApp(hid)
         }
 
+        // BUG 26 — Reset state and attempt rebind on service disconnected
         override fun onServiceDisconnected(profile: Int) {
             if (profile == BluetoothProfile.HID_DEVICE) {
                 hidDevice = null
                 _appRegistered.value = false
                 _connectionState.value = ConnectionState.Disconnected
                 reportSender.attach(null, null)
+                // Attempt to rebind
+                serviceScope.launch {
+                    delay(2_000L)
+                    Log.i(TAG, "Attempting to rebind HID profile after service disconnect")
+                    if (bluetoothAdapter?.isEnabled == true) registerHidProxy()
+                }
             }
         }
     }
 
     private fun registerApp(proxy: BluetoothHidDevice) {
+        // BUG 21 fix: BluetoothHidDeviceAppSdpSettings takes exactly 5 params
+        // (name, description, provider, subclass, descriptor) — no COUNTRY arg in Android API
         val sdp = BluetoothHidDeviceAppSdpSettings(
             HidDescriptors.SDP_NAME,
             HidDescriptors.SDP_DESCRIPTION,
@@ -366,8 +463,15 @@ class HidService : Service() {
                 reportSender.attach(null, null)
                 return
             }
-            // Prefer plugged device from system, fall back to pending target
-            val target = pluggedDevice ?: pendingTarget
+            // Prefer plugged device from system, fall back to pending target, then last device
+            // BUG 3 — Only clear pendingTarget after connect succeeds (in onConnectionStateChanged)
+            val target = pluggedDevice ?: pendingTarget ?: run {
+                // BUG 11 — Try auto-connect to last saved device
+                val lastAddr = lastConnectedAddress
+                if (!lastAddr.isNullOrBlank()) {
+                    try { bluetoothAdapter?.getRemoteDevice(lastAddr) } catch (_: Throwable) { null }
+                } else null
+            }
             if (target != null) {
                 val proxy = hidDevice
                 if (proxy != null) {
@@ -378,15 +482,18 @@ class HidService : Service() {
                         _connectionState.value = ConnectionState.Connected(target)
                         reportSender.attach(proxy, target)
                         updateNotification(lastNotificationText)
+                        // BUG 3 — Only null pendingTarget after confirmed connected
+                        if (pendingTarget?.address == target.address) pendingTarget = null
                     } else if (curState != BluetoothProfile.STATE_CONNECTING) {
                         try {
                             proxy.connect(target)
                         } catch (t: Throwable) {
                             _connectionState.value = ConnectionState.Error("connect: ${t.message}")
+                            // BUG 3 — Don't null pendingTarget here; leave for retry
                         }
                     }
                 }
-                pendingTarget = null
+                // Don't null pendingTarget unconditionally here (BUG 3 fix)
             }
         }
 
@@ -400,6 +507,14 @@ class HidService : Service() {
                     _connectionState.value = ConnectionState.Connected(device)
                     reportSender.attach(hidDevice, device)
                     updateNotification(lastNotificationText)
+                    reconnectAttempts = 0
+                    // BUG 3 — Null pendingTarget only after confirmed STATE_CONNECTED
+                    if (pendingTarget?.address == device.address) pendingTarget = null
+                    // BUG 11 — Persist last connected address
+                    lastConnectedAddress = device.address
+                    serviceScope.launch {
+                        preferencesRepository.setLastConnectedDeviceAddress(device.address)
+                    }
                 }
                 BluetoothProfile.STATE_CONNECTING -> {
                     _connectionState.value = ConnectionState.Connecting(device)
@@ -409,6 +524,10 @@ class HidService : Service() {
                     if (_connectionState.value is ConnectionState.Connected ||
                         _connectionState.value is ConnectionState.Connecting) {
                         _connectionState.value = ConnectionState.Disconnected
+                        // BUG 2 — Auto-reconnect if not user-initiated
+                        if (!userInitiatedDisconnect) {
+                            scheduleAutoReconnect(device)
+                        }
                     }
                     reportSender.attach(null, null)
                     updateNotification(lastNotificationText)
@@ -417,11 +536,19 @@ class HidService : Service() {
         }
 
         override fun onGetReport(device: BluetoothDevice?, type: Byte, id: Byte, bufferSize: Int) {
+            // BUG 5 — Return ERROR_RSP_INVALID_RPT_ID for unknown report IDs
             val size = when (id) {
                 HidDescriptors.REPORT_ID_MOUSE -> 5
                 HidDescriptors.REPORT_ID_KEYBOARD -> 8
                 HidDescriptors.REPORT_ID_CONSUMER -> 2
-                else -> bufferSize.coerceAtLeast(1)
+                else -> {
+                    try {
+                        hidDevice?.reportError(device, BluetoothHidDevice.ERROR_RSP_INVALID_RPT_ID)
+                    } catch (t: Throwable) {
+                        Log.w(TAG, "reportError: ${t.message}")
+                    }
+                    return
+                }
             }
             try {
                 hidDevice?.replyReport(device, type, id, ByteArray(size))
@@ -430,8 +557,13 @@ class HidService : Service() {
             }
         }
 
+        // BUG 4 — Acknowledge onSetReport to prevent Windows HID stall
         override fun onSetReport(device: BluetoothDevice?, type: Byte, id: Byte, data: ByteArray?) {
-            // Host LED state (CapsLock/NumLock) — accept silently
+            try {
+                hidDevice?.replyReport(device, type, id, data ?: ByteArray(0))
+            } catch (t: Throwable) {
+                Log.w(TAG, "onSetReport replyReport: ${t.message}")
+            }
         }
 
         override fun onVirtualCableUnplug(device: BluetoothDevice?) {

@@ -68,6 +68,7 @@ import com.btremote.app.bluetooth.MODIFIER_LEFT_ALT
 import com.btremote.app.bluetooth.MODIFIER_LEFT_CTRL
 import com.btremote.app.bluetooth.MODIFIER_LEFT_GUI
 import com.btremote.app.bluetooth.MODIFIER_LEFT_SHIFT
+import com.btremote.app.data.CustomShortcut
 
 private const val SENTINEL = "​" // zero-width space anchor
 
@@ -82,8 +83,14 @@ fun KeyboardScreen(
     val showFKeys        = prefs?.showFKeys ?: false
     val showArrows       = prefs?.showArrows ?: false
     val showEdit         = prefs?.showEdit ?: false
+    val showCustomShortcuts = prefs?.showCustomShortcuts ?: true
     val targetOs         by viewModel.effectiveTargetOs.collectAsStateWithLifecycle()
     val context          = LocalContext.current
+    val customShortcuts  = prefs?.customShortcuts ?: emptyList()
+
+    // Custom shortcut editor state
+    var showEditor       by remember { mutableStateOf(false) }
+    var editingShortcut  by remember { mutableStateOf<CustomShortcut?>(null) }
 
     Column(
         modifier = modifier
@@ -120,6 +127,19 @@ fun KeyboardScreen(
 
         LiveTypingField(viewModel, context)
 
+        if (showCustomShortcuts) {
+            // ── MY SHORTCUTS — always visible if enabled; shows empty + add chip if none yet ──
+            SectionLabel("MY SHORTCUTS")
+            CustomShortcutRow(
+                shortcuts = customShortcuts,
+                targetOs  = targetOs,
+                onFire    = { viewModel.pressCustomShortcut(it) },
+                onAdd     = { editingShortcut = null; showEditor = true },
+                onEdit    = { editingShortcut = it;  showEditor = true },
+                onDelete  = { viewModel.removeCustomShortcut(it.id) }
+            )
+        }
+
         if (showShortcutsWin) {
             SectionLabel("WINDOWS SHORTCUTS")
             ShortcutChips(viewModel, "windows")
@@ -140,6 +160,19 @@ fun KeyboardScreen(
             SectionLabel("NAVIGATION")
             ArrowCluster(viewModel)
         }
+    }
+
+    // Custom shortcut editor dialog
+    if (showEditor) {
+        CustomShortcutEditorDialog(
+            existing  = editingShortcut,
+            onSave    = { sc ->
+                if (editingShortcut == null) viewModel.addCustomShortcut(sc)
+                else viewModel.updateCustomShortcut(sc)
+                showEditor = false
+            },
+            onDismiss = { showEditor = false }
+        )
     }
 }
 

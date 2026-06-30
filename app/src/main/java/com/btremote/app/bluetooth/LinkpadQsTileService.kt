@@ -9,11 +9,20 @@ import androidx.annotation.RequiresApi
 import android.os.Build
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 
 /**
  * Quick Settings tile — appears in the Android notification shade pulldown.
  * State: ACTIVE = Bluetooth HID connected, INACTIVE = not connected.
  * Tapping opens the app (or reconnects if already running).
+ *
+ * BUG 20: Now collects connectionState flow in onStartListening so tile
+ * reflects real-time connection changes while the shade is open.
  */
 @RequiresApi(Build.VERSION_CODES.N)
 @AndroidEntryPoint
@@ -21,9 +30,30 @@ class LinkpadQsTileService : TileService() {
 
     @Inject lateinit var controller: HidServiceController
 
+    private val tileScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    private var stateJob: Job? = null
+
     override fun onStartListening() {
         super.onStartListening()
-        updateTile()
+        // BUG 20 — Start collecting flow so tile reflects live connection changes
+        stateJob?.cancel()
+        stateJob = tileScope.launch {
+            controller.connectionState.collect {
+                updateTile()
+            }
+        }
+    }
+
+    override fun onStopListening() {
+        super.onStopListening()
+        // BUG 20 — Cancel collection when shade is closed
+        stateJob?.cancel()
+        stateJob = null
+    }
+
+    override fun onDestroy() {
+        tileScope.cancel()
+        super.onDestroy()
     }
 
     override fun onClick() {

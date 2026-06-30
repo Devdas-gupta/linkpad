@@ -27,7 +27,9 @@ class AirMouseViewModel @Inject constructor(
     val preferences: StateFlow<AppPreferences?> = prefs.preferences
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-    val sensorAvailable: Boolean = sensor.isAvailable()
+    // BUG 45 — sensorAvailable must be a StateFlow<Boolean> so UI recomposes when it changes
+    private val _sensorAvailable = MutableStateFlow(sensor.isAvailable())
+    val sensorAvailable: StateFlow<Boolean> = _sensorAvailable.asStateFlow()
 
     private val _tilt = MutableStateFlow(0f to 0f)
     val tilt: StateFlow<Pair<Float, Float>> = _tilt.asStateFlow()
@@ -36,7 +38,11 @@ class AirMouseViewModel @Inject constructor(
 
     fun start(sensitivity: Int, invert: Boolean = false) {
         stop()
+        // BUG 46 — Refresh sensor availability and calibrate gyro bias on start
+        _sensorAvailable.value = sensor.isAvailable()
         if (!sensor.isAvailable()) return
+        // BUG 46 — Reset tilt to zero (gyro bias calibration) before starting
+        _tilt.value = 0f to 0f
         job = viewModelScope.launch {
             sensor.deltas(sensitivity, invert).collect { (dx, dy) ->
                 _tilt.value = dx to dy
@@ -54,8 +60,12 @@ class AirMouseViewModel @Inject constructor(
         _tilt.value = 0f to 0f
     }
 
+    // BUG 46 — calibrate() now properly resets tilt origin (gyro bias)
     fun calibrate() {
         _tilt.value = 0f to 0f
+        // Restart sensor collection to re-establish bias baseline
+        val curPrefs = preferences.value ?: return
+        start(curPrefs.airMouseSensitivity, curPrefs.airMouseInvert)
     }
 
     fun leftClick() {

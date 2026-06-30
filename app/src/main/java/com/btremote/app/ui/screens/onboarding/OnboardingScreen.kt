@@ -1,6 +1,8 @@
 package com.btremote.app.ui.screens.onboarding
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -9,6 +11,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -35,6 +38,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
@@ -46,7 +50,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -100,6 +106,7 @@ fun OnboardingScreen(
     onFinish: () -> Unit,
     viewModel: OnboardingViewModel = hiltViewModel()
 ) {
+    val haptic = LocalHapticFeedback.current
     val finish = {
         viewModel.complete()
         onFinish()
@@ -108,6 +115,9 @@ fun OnboardingScreen(
     var page by remember { mutableIntStateOf(0) }
     val current = pages[page.coerceIn(pages.indices)]
     val isLast  = page >= pages.lastIndex
+
+    // UI-59 — Track drag for swipe gesture navigation
+    var dragAccumX by remember { mutableFloatStateOf(0f) }
 
     val isLight = MaterialTheme.colorScheme.background.luminance() > 0.5f
     val bgColors = if (isLight) {
@@ -120,6 +130,26 @@ fun OnboardingScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(Brush.verticalGradient(bgColors))
+            // UI-59 — Swipe left/right to navigate onboarding pages
+            .pointerInput(Unit) {
+                detectHorizontalDragGestures(
+                    onDragEnd = {
+                        when {
+                            dragAccumX < -80f && page < pages.lastIndex -> {
+                                page++
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            }
+                            dragAccumX > 80f && page > 0 -> {
+                                page--
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            }
+                        }
+                        dragAccumX = 0f
+                    },
+                    onDragCancel = { dragAccumX = 0f },
+                    onHorizontalDrag = { _, dragAmount -> dragAccumX += dragAmount }
+                )
+            }
     ) {
         // Skip button top-right
         TextButton(
@@ -207,17 +237,26 @@ fun OnboardingScreen(
 
             Spacer(Modifier.weight(1f))
 
-            // Page dots
+            // UI-60 — Page dots with animateDpAsState for smooth width transition
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 pages.indices.forEach { i ->
+                    // UI-60 — Animate dot width and color changes
+                    val dotWidth by animateDpAsState(
+                        targetValue = if (i == page) 24.dp else 8.dp,
+                        animationSpec = tween(300),
+                        label = "dotWidth$i"
+                    )
+                    val dotColor by animateColorAsState(
+                        targetValue = if (i == page) pages[i].iconColor
+                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f),
+                        animationSpec = tween(300),
+                        label = "dotColor$i"
+                    )
                     Box(
                         modifier = Modifier
-                            .size(if (i == page) 24.dp else 8.dp, 8.dp)
+                            .size(dotWidth, 8.dp)
                             .clip(RoundedCornerShape(50))
-                            .background(
-                                if (i == page) pages[i].iconColor
-                                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f)
-                            )
+                            .background(dotColor)
                     )
                 }
             }
@@ -244,7 +283,11 @@ fun OnboardingScreen(
                     )
                     .pointerInput(Unit) {
                         detectTapGestures(onTap = {
-                            if (page >= pages.lastIndex) finish() else page++
+                            if (page >= pages.lastIndex) finish()
+                            else {
+                                page++
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            }
                         })
                     },
                 contentAlignment = Alignment.Center

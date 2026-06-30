@@ -258,6 +258,10 @@ private fun KeyboardTab(p: AppPreferences, vm: SettingsViewModel) {
         trailing = { Toggle(p.directInputMode, vm::setDirectInputMode) })
 
     SectionLabel("KEYBOARD SECTIONS")
+    SettingRow(icon = Icons.Outlined.Keyboard, title = "Custom shortcuts",
+        subtitle = "My Shortcuts row",
+        trailing = { Toggle(p.showCustomShortcuts, vm::setShowCustomShortcuts) })
+    DividerThin()
     SettingRow(icon = Icons.Outlined.Keyboard, title = "Function keys",
         subtitle = "F1 through F12",
         trailing = { Toggle(p.showFKeys, vm::setShowFKeys) })

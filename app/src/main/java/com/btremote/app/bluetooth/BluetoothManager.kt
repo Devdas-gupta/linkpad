@@ -7,6 +7,7 @@ import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothManager as AndroidBluetoothManager
 import android.bluetooth.le.BluetoothLeScanner
 import android.bluetooth.le.ScanCallback
+import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.BroadcastReceiver
@@ -15,9 +16,11 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.ParcelUuid
 import android.util.Log
 import androidx.core.content.ContextCompat
 import dagger.hilt.android.qualifiers.ApplicationContext
+import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.Job
@@ -130,8 +133,9 @@ class BluetoothManager @Inject constructor(
                 addAction(BluetoothDevice.ACTION_FOUND)
                 addAction(BluetoothAdapter.ACTION_DISCOVERY_FINISHED)
             }
+            // BUG 15 — Use RECEIVER_NOT_EXPORTED to prevent fake ACTION_FOUND injection
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                context.registerReceiver(classicReceiver, filter, Context.RECEIVER_EXPORTED)
+                context.registerReceiver(classicReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
             } else {
                 context.registerReceiver(classicReceiver, filter)
             }
@@ -151,8 +155,12 @@ class BluetoothManager @Inject constructor(
         val settings = ScanSettings.Builder()
             .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
             .build()
+        // BUG 24 — Filter BLE scan to HID Service UUID 0x1812 to avoid polluted results
+        val hidFilter = ScanFilter.Builder()
+            .setServiceUuid(ParcelUuid(UUID.fromString("00001812-0000-1000-8000-00805f9b34fb")))
+            .build()
         try {
-            scanner?.startScan(null, settings, scanCallback)
+            scanner?.startScan(listOf(hidFilter), settings, scanCallback)
         } catch (t: Throwable) {
             Log.w(TAG, "startScan(BLE): ${t.message}")
         }

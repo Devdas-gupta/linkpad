@@ -3,6 +3,10 @@ package com.btremote.app.ui.components
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -101,11 +105,25 @@ fun ConnectionBar(
     val barBorderColor by animateColorAsState(
         targetValue = when {
             connected -> NeonGreen.copy(alpha = 0.40f)
+            state is ConnectionState.Connecting -> GlowPrimary.copy(alpha = 0.30f)
             else      -> GlassBorderDark
         },
         animationSpec = tween(600),
         label = "barBorder"
     )
+
+    // BUG 28 — Pulsing alpha for the dot when connecting
+    val connectingTransition = rememberInfiniteTransition(label = "dotPulse")
+    val dotPulseAlpha by connectingTransition.animateFloat(
+        initialValue = 0.4f,
+        targetValue  = 1.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(600),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "dotPulseAlpha"
+    )
+    val dotAlpha = if (state is ConnectionState.Connecting) dotPulseAlpha else 1f
 
     // Drop-shadow glow when connected
     val glowBrush = if (connected)
@@ -143,12 +161,12 @@ fun ConnectionBar(
                 .padding(horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Status dot (pulses when connecting)
+            // BUG 28 — Status dot pulses when connecting
             Box(
                 modifier = Modifier
                     .size(9.dp)
                     .clip(CircleShape)
-                    .background(dotColor)
+                    .background(dotColor.copy(alpha = dotAlpha))
             )
             Spacer(Modifier.width(10.dp))
 

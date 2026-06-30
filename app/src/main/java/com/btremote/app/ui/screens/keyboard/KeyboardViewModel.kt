@@ -7,6 +7,7 @@ import com.btremote.app.bluetooth.ConsumerUsage
 import com.btremote.app.bluetooth.HidKeyCode
 import com.btremote.app.bluetooth.HidServiceController
 import com.btremote.app.data.AppPreferences
+import com.btremote.app.data.CustomShortcut
 import com.btremote.app.data.HostProfileRepository
 import com.btremote.app.data.PreferencesRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -77,6 +78,41 @@ class KeyboardViewModel @Inject constructor(
 
     fun setDirectInputMode(enabled: Boolean) {
         viewModelScope.launch { prefs.setDirectInputMode(enabled) }
+    }
+
+    /** Fire a user-defined custom shortcut over BLE/BT. */
+    fun pressCustomShortcut(shortcut: CustomShortcut) {
+        // keyCode == 0 means modifier-only (e.g. Win key alone); use NONE
+        val key = if (shortcut.keyCode == 0) {
+            HidKeyCode.NONE
+        } else {
+            HidKeyCode.values().firstOrNull { it.code.toInt() and 0xFF == shortcut.keyCode }
+                ?: HidKeyCode.NONE
+        }
+        queue.trySend(KbAction.Press(key, shortcut.modifiers))
+    }
+
+    /** Persist the full shortcut list. */
+    fun saveCustomShortcuts(list: List<CustomShortcut>) {
+        viewModelScope.launch { prefs.setCustomShortcuts(list) }
+    }
+
+    /** Add a new shortcut (appended to existing list). */
+    fun addCustomShortcut(shortcut: CustomShortcut) {
+        val current = preferences.value?.customShortcuts ?: emptyList()
+        saveCustomShortcuts(current + shortcut)
+    }
+
+    /** Remove a shortcut by id. */
+    fun removeCustomShortcut(id: String) {
+        val current = preferences.value?.customShortcuts ?: emptyList()
+        saveCustomShortcuts(current.filter { it.id != id })
+    }
+
+    /** Replace a shortcut by id. */
+    fun updateCustomShortcut(updated: CustomShortcut) {
+        val current = preferences.value?.customShortcuts ?: emptyList()
+        saveCustomShortcuts(current.map { if (it.id == updated.id) updated else it })
     }
 
     override fun onCleared() {

@@ -25,8 +25,11 @@ import com.btremote.app.ui.navigation.BTRemoteNavGraph
 import com.btremote.app.ui.theme.BTRemoteTheme
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 @AndroidEntryPoint
@@ -37,6 +40,9 @@ class MainActivity : ComponentActivity() {
 
     @Volatile
     private var serviceStarted: Boolean = false
+
+    // BUG 19 — Cache volumeButtonAction as a StateFlow so handleVolumeKey reads synchronously
+    private lateinit var volumeActionFlow: StateFlow<String>
 
     private val permLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -49,6 +55,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        // BUG 19 — Initialize the StateFlow before any UI setup
+        volumeActionFlow = preferencesRepository.preferences
+            .map { it.volumeButtonAction }
+            .stateIn(lifecycleScope, SharingStarted.Eagerly, "remote")
         ensurePermissionsAndStart()
 
         setContent {
@@ -100,10 +110,10 @@ class MainActivity : ComponentActivity() {
             if (hasBluetoothPermissions()) {
                 startServiceOnce()
             } else {
+                // BUG 14 — BLUETOOTH_ADVERTISE removed: unrelated to HID scanning
                 val toRequest = mutableListOf(
                     Manifest.permission.BLUETOOTH_CONNECT,
-                    Manifest.permission.BLUETOOTH_SCAN,
-                    Manifest.permission.BLUETOOTH_ADVERTISE
+                    Manifest.permission.BLUETOOTH_SCAN
                 )
                 permLauncher.launch(toRequest.toTypedArray())
             }
@@ -164,20 +174,20 @@ class MainActivity : ComponentActivity() {
         val state = controller.connectionState.value
         if (state !is ConnectionState.Connected) return false
 
-        lifecycleScope.launch {
-            val action = preferencesRepository.preferences.first().volumeButtonAction
-            lastVolumeAction = action
-            if (!isDown) return@launch
+        // BUG 19 — Read volumeButtonAction synchronously from cached StateFlow (no async race)
+        val action = volumeActionFlow.value
+        lastVolumeAction = action
+        if (isDown) {
             when (action) {
                 "remote" -> {
                     val usage = if (keyCode == KeyEvent.KEYCODE_VOLUME_UP) ConsumerUsage.VOLUME_UP else ConsumerUsage.VOLUME_DOWN
-                    controller.reportSender.sendConsumerKey(usage)
+                    lifecycleScope.launch { controller.reportSender.sendConsumerKey(usage) }
                 }
                 "disabled" -> { }
                 else -> { }
             }
         }
-        return lastVolumeAction != "system"
+        return action != "system"
     }
 
     private fun applyOverLockScreen(enable: Boolean) {

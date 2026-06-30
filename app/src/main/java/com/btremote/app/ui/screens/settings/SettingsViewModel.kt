@@ -59,4 +59,5 @@ class SettingsViewModel @Inject constructor(
     fun renameProfile(id: String, name: String) = viewModelScope.launch { profileRepo.rename(id, name) }
     fun addProfile(name: String, os: String) = viewModelScope.launch { profileRepo.addProfile(name, os) }
     fun removeProfile(id: String) = viewModelScope.launch { profileRepo.removeProfile(id) }
+    fun setShowCustomShortcuts(v: Boolean) = viewModelScope.launch { prefs.setShowCustomShortcuts(v) }
 }

@@ -52,6 +52,8 @@ fun AirMouseScreen(
 ) {
     val prefs       by viewModel.preferences.collectAsStateWithLifecycle()
     val tilt        by viewModel.tilt.collectAsStateWithLifecycle()
+    // BUG 45 — Collect sensorAvailable as StateFlow so UI recomposes on change
+    val sensorAvailable by viewModel.sensorAvailable.collectAsStateWithLifecycle()
     val enabled     = prefs?.airMouseEnabled ?: false
     val sensitivity = (prefs?.airMouseSensitivity ?: 8).coerceIn(1, 20)
     val invert      = prefs?.airMouseInvert ?: false
@@ -79,7 +81,7 @@ fun AirMouseScreen(
                 .background(MaterialTheme.colorScheme.surface)
                 .border(
                     width = 1.dp,
-                    color = if (enabled && viewModel.sensorAvailable)
+                    color = if (enabled && sensorAvailable)
                         MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
                     else
                         MaterialTheme.colorScheme.outline,
@@ -94,7 +96,7 @@ fun AirMouseScreen(
                     .size(36.dp)
                     .clip(CircleShape)
                     .background(
-                        if (enabled && viewModel.sensorAvailable)
+                        if (enabled && sensorAvailable)
                             MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
                         else
                             MaterialTheme.colorScheme.surfaceVariant
@@ -104,7 +106,7 @@ fun AirMouseScreen(
                 Icon(
                     Icons.Outlined.Navigation,
                     contentDescription = null,
-                    tint = if (enabled && viewModel.sensorAvailable)
+                    tint = if (enabled && sensorAvailable)
                         MaterialTheme.colorScheme.primary
                     else
                         MaterialTheme.colorScheme.onSurfaceVariant,
@@ -114,19 +116,19 @@ fun AirMouseScreen(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     when {
-                        !viewModel.sensorAvailable -> "No gyroscope"
+                        !sensorAvailable -> "No gyroscope"
                         enabled -> "Air Mouse ON"
                         else -> "Air Mouse OFF"
                     },
                     style = MaterialTheme.typography.titleSmall,
-                    color = if (enabled && viewModel.sensorAvailable)
+                    color = if (enabled && sensorAvailable)
                         MaterialTheme.colorScheme.primary
                     else
                         MaterialTheme.colorScheme.onSurface
                 )
                 Text(
                     when {
-                        !viewModel.sensorAvailable -> "Gyroscope unavailable on this device"
+                        !sensorAvailable -> "Gyroscope unavailable on this device"
                         enabled -> "Tilt phone to move cursor"
                         else -> "Enable in Settings → Mouse"
                     },
@@ -135,7 +137,7 @@ fun AirMouseScreen(
                 )
             }
             // Quick toggle — only if sensor available. Writes the pref via ViewModel.
-            if (viewModel.sensorAvailable) {
+            if (sensorAvailable) {
                 Switch(
                     checked = enabled,
                     onCheckedChange = { viewModel.setEnabled(it) },
@@ -154,7 +156,7 @@ fun AirMouseScreen(
         val infiniteTransition = rememberInfiniteTransition(label = "cursorPulse")
         val cursorPulse by infiniteTransition.animateFloat(
             initialValue = 1f,
-            targetValue  = if (enabled && viewModel.sensorAvailable) 1.18f else 1f,
+            targetValue  = if (enabled && sensorAvailable) 1.18f else 1f,
             animationSpec = infiniteRepeatable(tween(700), repeatMode = RepeatMode.Reverse),
             label = "cursorScale"
         )
@@ -167,7 +169,7 @@ fun AirMouseScreen(
                 .background(MaterialTheme.colorScheme.surface)
                 .border(
                     1.dp,
-                    if (enabled && viewModel.sensorAvailable)
+                    if (enabled && sensorAvailable)
                         MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
                     else
                         MaterialTheme.colorScheme.outline,
@@ -203,9 +205,9 @@ fun AirMouseScreen(
                 drawCircle(color = secondary, radius = 4f, center = pos)
             }
 
-            if (!enabled || !viewModel.sensorAvailable) {
+            if (!enabled || !sensorAvailable) {
                 Text(
-                    if (!viewModel.sensorAvailable) "No gyroscope" else "OFF",
+                    if (!sensorAvailable) "No gyroscope" else "OFF",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.outline.copy(alpha = 0.6f),
                     modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp)

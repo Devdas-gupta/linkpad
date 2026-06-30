@@ -1,10 +1,12 @@
 package com.btremote.app.ui.screens.tv
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -42,10 +44,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -54,7 +58,6 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -62,6 +65,8 @@ import com.btremote.app.ui.theme.GlowCyan
 import com.btremote.app.ui.theme.GlowPink
 import com.btremote.app.ui.theme.GlowPrimary
 import com.btremote.app.ui.theme.NeonGreen
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @Composable
 fun TvRemoteScreen(
@@ -173,49 +178,58 @@ private fun DPadRing(viewModel: TvRemoteViewModel) {
                 .border(1.dp, GlowPrimary.copy(alpha = 0.3f), CircleShape)
         )
 
-        // Up
+        // UI-33 — Hold-to-repeat D-Pad arrows
         DPadArrow(
             icon = Icons.Outlined.ArrowUpward, label = "Up",
             modifier = Modifier.align(Alignment.TopCenter).padding(top = 12.dp)
         ) { haptic.performHapticFeedback(HapticFeedbackType.LongPress); viewModel.dpadUp() }
 
-        // Down
         DPadArrow(
             icon = Icons.Outlined.ArrowDownward, label = "Down",
             modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp)
         ) { haptic.performHapticFeedback(HapticFeedbackType.LongPress); viewModel.dpadDown() }
 
-        // Left
         DPadArrow(
             icon = Icons.Outlined.ChevronLeft, label = "Left",
             modifier = Modifier.align(Alignment.CenterStart).padding(start = 12.dp)
         ) { haptic.performHapticFeedback(HapticFeedbackType.LongPress); viewModel.dpadLeft() }
 
-        // Right
         DPadArrow(
             icon = Icons.Outlined.ChevronRight, label = "Right",
             modifier = Modifier.align(Alignment.CenterEnd).padding(end = 12.dp)
         ) { haptic.performHapticFeedback(HapticFeedbackType.LongPress); viewModel.dpadRight() }
 
-        // Center OK
+        // Center OK — UI-32 pressed state
+        var okPressed by remember { mutableStateOf(false) }
+        val okScale by animateFloatAsState(
+            targetValue = if (okPressed) 0.90f else 1f,
+            animationSpec = tween(80),
+            label = "okScale"
+        )
         Box(
             modifier = Modifier
                 .size(72.dp)
+                .scale(okScale)
                 .clip(CircleShape)
                 .background(
                     Brush.radialGradient(
                         listOf(
-                            MaterialTheme.colorScheme.primary,
+                            if (okPressed) MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
+                            else MaterialTheme.colorScheme.primary,
                             MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
                         )
                     )
                 )
                 .border(1.dp, MaterialTheme.colorScheme.primary, CircleShape)
                 .pointerInput(Unit) {
-                    detectTapGestures(onTap = {
+                    awaitEachGesture {
+                        awaitFirstDown(pass = PointerEventPass.Main)
+                        okPressed = true
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        waitForUpOrCancellation()
+                        okPressed = false
                         viewModel.dpadOk()
-                    })
+                    }
                 },
             contentAlignment = Alignment.Center
         ) {
@@ -230,6 +244,7 @@ private fun DPadRing(viewModel: TvRemoteViewModel) {
     }
 }
 
+// UI-32 + UI-33: DPadArrow with pressed state AND hold-to-repeat
 @Composable
 private fun DPadArrow(
     icon: ImageVector,
@@ -237,15 +252,49 @@ private fun DPadArrow(
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
+    val scope = rememberCoroutineScope()
+    var pressed by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) 0.85f else 1f,
+        animationSpec = tween(80),
+        label = "dpadArrowScale"
+    )
+
     Box(
         modifier = modifier
             .size(52.dp)
+            .scale(scale)
             .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
-            .pointerInput(Unit) { detectTapGestures(onTap = { onClick() }) },
+            .background(
+                if (pressed) MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
+                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)
+            )
+            // UI-33 — Hold-to-repeat: initial delay 400ms, then every 150ms
+            .pointerInput(onClick) {
+                awaitEachGesture {
+                    awaitFirstDown(pass = PointerEventPass.Main)
+                    pressed = true
+                    onClick()
+                    val repeatJob = scope.launch {
+                        delay(400L) // initial hold threshold
+                        while (pressed) {
+                            onClick()
+                            delay(150L) // repeat interval
+                        }
+                    }
+                    waitForUpOrCancellation()
+                    pressed = false
+                    repeatJob.cancel()
+                }
+            },
         contentAlignment = Alignment.Center
     ) {
-        Icon(icon, label, tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f), modifier = Modifier.size(28.dp))
+        Icon(
+            icon, label,
+            tint = if (pressed) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
+            modifier = Modifier.size(28.dp)
+        )
     }
 }
 
@@ -254,21 +303,35 @@ private fun DPadArrow(
 @Composable
 private fun TvPlayPause(isPlaying: Boolean, onClick: () -> Unit) {
     val haptic = LocalHapticFeedback.current
+    var pressed by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) 0.90f else 1f,
+        animationSpec = tween(80),
+        label = "playPauseScale"
+    )
     Box(
         modifier = Modifier
             .size(72.dp)
+            .scale(scale)
             .clip(CircleShape)
             .background(
                 Brush.radialGradient(
-                    listOf(GlowCyan.copy(alpha = 0.35f), GlowCyan.copy(alpha = 0.10f))
+                    listOf(
+                        if (pressed) GlowCyan.copy(alpha = 0.55f) else GlowCyan.copy(alpha = 0.35f),
+                        GlowCyan.copy(alpha = 0.10f)
+                    )
                 )
             )
             .border(1.dp, GlowCyan.copy(alpha = 0.7f), CircleShape)
             .pointerInput(Unit) {
-                detectTapGestures(onTap = {
+                awaitEachGesture {
+                    awaitFirstDown(pass = PointerEventPass.Main)
+                    pressed = true
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    waitForUpOrCancellation()
+                    pressed = false
                     onClick()
-                })
+                }
             },
         contentAlignment = Alignment.Center
     ) {
@@ -283,6 +346,7 @@ private fun TvPlayPause(isPlaying: Boolean, onClick: () -> Unit) {
 
 // ── Reusable TV buttons ───────────────────────────────────────────────────────
 
+// UI-32 — Pressed state on TvSystemButton
 @Composable
 private fun TvSystemButton(
     icon: ImageVector,
@@ -291,6 +355,12 @@ private fun TvSystemButton(
     onClick: () -> Unit
 ) {
     val haptic = LocalHapticFeedback.current
+    var pressed by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) 0.88f else 1f,
+        animationSpec = tween(80),
+        label = "sysButtonScale"
+    )
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -298,14 +368,26 @@ private fun TvSystemButton(
         Box(
             modifier = Modifier
                 .size(52.dp)
+                .scale(scale)
                 .clip(RoundedCornerShape(16.dp))
-                .background(accentColor.copy(alpha = 0.12f))
-                .border(1.dp, accentColor.copy(alpha = 0.45f), RoundedCornerShape(16.dp))
+                .background(
+                    if (pressed) accentColor.copy(alpha = 0.28f)
+                    else accentColor.copy(alpha = 0.12f)
+                )
+                .border(
+                    1.dp,
+                    if (pressed) accentColor.copy(alpha = 0.8f) else accentColor.copy(alpha = 0.45f),
+                    RoundedCornerShape(16.dp)
+                )
                 .pointerInput(Unit) {
-                    detectTapGestures(onTap = {
+                    awaitEachGesture {
+                        awaitFirstDown(pass = PointerEventPass.Main)
+                        pressed = true
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        waitForUpOrCancellation()
+                        pressed = false
                         onClick()
-                    })
+                    }
                 },
             contentAlignment = Alignment.Center
         ) {
@@ -315,6 +397,7 @@ private fun TvSystemButton(
     }
 }
 
+// UI-32 — Pressed state on TvActionButton
 @Composable
 private fun TvActionButton(
     icon: ImageVector,
@@ -323,41 +406,77 @@ private fun TvActionButton(
     onClick: () -> Unit
 ) {
     val haptic = LocalHapticFeedback.current
+    var pressed by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) 0.90f else 1f,
+        animationSpec = tween(80),
+        label = "actionButtonScale"
+    )
     Box(
         modifier = modifier
             .height(52.dp)
+            .scale(scale)
             .clip(RoundedCornerShape(14.dp))
-            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f))
-            .border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f), RoundedCornerShape(14.dp))
+            .background(
+                if (pressed) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.14f)
+                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)
+            )
+            .border(
+                1.dp,
+                if (pressed) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
+                RoundedCornerShape(14.dp)
+            )
             .pointerInput(Unit) {
-                detectTapGestures(onTap = {
+                awaitEachGesture {
+                    awaitFirstDown(pass = PointerEventPass.Main)
+                    pressed = true
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    waitForUpOrCancellation()
+                    pressed = false
                     onClick()
-                })
+                }
             },
         contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(icon, label, tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f), modifier = Modifier.size(18.dp))
+            Icon(
+                icon, label,
+                tint = if (pressed) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
+                modifier = Modifier.size(18.dp)
+            )
             Text(label, style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
 
+// UI-32 — Pressed state on ColorButton
 @Composable
 private fun ColorButton(label: String, color: Color, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val haptic = LocalHapticFeedback.current
+    var pressed by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) 0.90f else 1f,
+        animationSpec = tween(80),
+        label = "colorButtonScale"
+    )
     Box(
         modifier = modifier
             .height(40.dp)
+            .scale(scale)
             .clip(RoundedCornerShape(50))
-            .background(color.copy(alpha = 0.22f))
-            .border(1.dp, color.copy(alpha = 0.6f), RoundedCornerShape(50))
+            .background(if (pressed) color.copy(alpha = 0.45f) else color.copy(alpha = 0.22f))
+            .border(1.dp, if (pressed) color else color.copy(alpha = 0.6f), RoundedCornerShape(50))
             .pointerInput(Unit) {
-                detectTapGestures(onTap = {
+                awaitEachGesture {
+                    awaitFirstDown(pass = PointerEventPass.Main)
+                    pressed = true
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    waitForUpOrCancellation()
+                    pressed = false
                     onClick()
-                })
+                }
             },
         contentAlignment = Alignment.Center
     ) {
@@ -387,27 +506,48 @@ private fun NumberPad(viewModel: TvRemoteViewModel) {
     }
 }
 
+// UI-32 — Pressed state on NumberKey
 @Composable
 private fun NumberKey(num: Int, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val haptic = LocalHapticFeedback.current
+    var pressed by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) 0.90f else 1f,
+        animationSpec = tween(80),
+        label = "numKeyScale"
+    )
     Box(
         modifier = modifier
             .height(48.dp)
+            .scale(scale)
             .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
-            .border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f), RoundedCornerShape(12.dp))
+            .background(
+                if (pressed) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)
+            )
+            .border(
+                1.dp,
+                if (pressed) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f),
+                RoundedCornerShape(12.dp)
+            )
             .pointerInput(Unit) {
-                detectTapGestures(onTap = {
+                awaitEachGesture {
+                    awaitFirstDown(pass = PointerEventPass.Main)
+                    pressed = true
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    waitForUpOrCancellation()
+                    pressed = false
                     onClick()
-                })
+                }
             },
         contentAlignment = Alignment.Center
     ) {
         Text(
             text = num.toString(),
             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Medium),
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f)
+            color = if (pressed) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f)
         )
     }
 }

@@ -54,11 +54,15 @@ class HidServiceController @Inject constructor(
             }
         }
 
+        // BUG 26 — Reset state when HidService system binding drops
         override fun onServiceDisconnected(name: ComponentName?) {
             bound = false
             service = null
             stateJob?.cancel()
             registeredJob?.cancel()
+            // Reset UI state so user sees disconnected, not stale Connected
+            _connectionState.value = ConnectionState.Disconnected
+            _appRegistered.value = false
         }
     }
 

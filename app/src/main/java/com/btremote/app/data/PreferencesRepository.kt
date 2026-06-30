@@ -15,6 +15,49 @@ import kotlinx.coroutines.flow.map
 
 private val Context.preferencesDataStore by preferencesDataStore(name = "bt_remote_prefs")
 
+/**
+ * A single user-defined shortcut button.
+ *
+ * @param id      Stable UUID string.
+ * @param label   Display name shown on the button (e.g. "Screenshot").
+ * @param os      "mac", "win", or "both".
+ * @param modifiers Bitmask of HID modifier keys (CTRL/SHIFT/ALT/GUI).
+ * @param keyCode HID key code byte value (0x00 = modifier-only combo).
+ */
+data class CustomShortcut(
+    val id: String,
+    val label: String,
+    val os: String,       // "mac" | "win" | "both"
+    val modifiers: Int,   // HID modifier bitmask
+    val keyCode: Int      // HID key code (0x00–0x65)
+) {
+    /** Serialises to a single pipe-delimited string for DataStore storage. */
+    fun serialise(): String = "$id|$label|$os|$modifiers|$keyCode"
+
+    companion object {
+        fun deserialise(raw: String): CustomShortcut? {
+            val parts = raw.split("|").takeIf { it.size == 5 } ?: return null
+            return runCatching {
+                CustomShortcut(
+                    id        = parts[0],
+                    label     = parts[1],
+                    os        = parts[2],
+                    modifiers = parts[3].toInt(),
+                    keyCode   = parts[4].toInt()
+                )
+            }.getOrNull()
+        }
+
+        /** Serialise list → one DataStore string. */
+        fun encodeList(list: List<CustomShortcut>): String =
+            list.joinToString(";") { it.serialise() }
+
+        /** Deserialise DataStore string → list. */
+        fun decodeList(raw: String): List<CustomShortcut> =
+            if (raw.isBlank()) emptyList()
+            else raw.split(";").mapNotNull { deserialise(it) }
+    }
+}
 data class AppPreferences(
     val pointerSpeed: Int,
     val scrollSpeed: Int,
@@ -47,7 +90,11 @@ data class AppPreferences(
     /** True to show persistent status bar notification to prevent OS reclaim. */
     val backgroundServiceNotification: Boolean,
     /** True after the user completes or skips onboarding. */
-    val onboardingComplete: Boolean
+    val onboardingComplete: Boolean,
+    /** User-defined custom shortcut buttons. */
+    val customShortcuts: List<CustomShortcut>,
+    /** True to show the custom shortcuts row in KeyboardScreen. */
+    val showCustomShortcuts: Boolean
 ) {
     companion object {
         val DEFAULT = AppPreferences(
@@ -59,7 +106,7 @@ data class AppPreferences(
             airMouseShowLeft = true,
             airMouseShowRight = true,
             airMouseShowMiddle = false,
-            airMouseShowReset = true,
+            airMouseShowReset = false,
             scrollBarPosition = "right",
             mouseButtonLayout = "left_right",
             mouseButtonsPosition = "bottom",
@@ -80,7 +127,9 @@ data class AppPreferences(
             showAndroidNavButtons = false,
             targetOs = "auto",
             backgroundServiceNotification = false,
-            onboardingComplete = false
+            onboardingComplete = false,
+            customShortcuts = emptyList(),
+            showCustomShortcuts = false
         )
     }
 }
@@ -122,6 +171,8 @@ class PreferencesRepository @Inject constructor(
         val TARGET_OS              = stringPreferencesKey("target_os")
         val BACKGROUND_SERVICE_NOTIFICATION = booleanPreferencesKey("background_service_notification")
         val ONBOARDING_COMPLETE    = booleanPreferencesKey("onboarding_complete")
+        val CUSTOM_SHORTCUTS       = stringPreferencesKey("custom_shortcuts")
+        val SHOW_CUSTOM_SHORTCUTS  = booleanPreferencesKey("show_custom_shortcuts")
     }
 
     val preferences: Flow<AppPreferences> = dataStore.data.map { it.toAppPreferences() }
@@ -135,7 +186,7 @@ class PreferencesRepository @Inject constructor(
         airMouseShowLeft          = this[Keys.AIR_MOUSE_SHOW_LEFT] ?: true,
         airMouseShowRight         = this[Keys.AIR_MOUSE_SHOW_RIGHT] ?: true,
         airMouseShowMiddle        = this[Keys.AIR_MOUSE_SHOW_MIDDLE] ?: false,
-        airMouseShowReset         = this[Keys.AIR_MOUSE_SHOW_RESET] ?: true,
+        airMouseShowReset         = this[Keys.AIR_MOUSE_SHOW_RESET] ?: false,
         scrollBarPosition         = this[Keys.SCROLL_BAR_POSITION] ?: "right",
         mouseButtonLayout         = this[Keys.MOUSE_BUTTON_LAYOUT] ?: "left_right",
         mouseButtonsPosition      = this[Keys.MOUSE_BUTTONS_POSITION] ?: "bottom",
@@ -156,7 +207,9 @@ class PreferencesRepository @Inject constructor(
         showAndroidNavButtons     = this[Keys.SHOW_ANDROID_NAV_BUTTONS] ?: false,
         targetOs                  = this[Keys.TARGET_OS] ?: "auto",
         backgroundServiceNotification = this[Keys.BACKGROUND_SERVICE_NOTIFICATION] ?: false,
-        onboardingComplete        = this[Keys.ONBOARDING_COMPLETE] ?: false
+        onboardingComplete        = this[Keys.ONBOARDING_COMPLETE] ?: false,
+        customShortcuts           = CustomShortcut.decodeList(this[Keys.CUSTOM_SHORTCUTS] ?: ""),
+        showCustomShortcuts       = this[Keys.SHOW_CUSTOM_SHORTCUTS] ?: false
     )
 
     suspend fun setPointerSpeed(value: Int)           = dataStore.edit { it[Keys.POINTER_SPEED] = value }
@@ -189,4 +242,7 @@ class PreferencesRepository @Inject constructor(
     suspend fun setTargetOs(value: String)            = dataStore.edit { it[Keys.TARGET_OS] = value }
     suspend fun setBackgroundServiceNotification(value: Boolean) = dataStore.edit { it[Keys.BACKGROUND_SERVICE_NOTIFICATION] = value }
     suspend fun setOnboardingComplete(value: Boolean) = dataStore.edit { it[Keys.ONBOARDING_COMPLETE] = value }
+    suspend fun setCustomShortcuts(list: List<CustomShortcut>) =
+        dataStore.edit { it[Keys.CUSTOM_SHORTCUTS] = CustomShortcut.encodeList(list) }
+    suspend fun setShowCustomShortcuts(value: Boolean) = dataStore.edit { it[Keys.SHOW_CUSTOM_SHORTCUTS] = value }
 }

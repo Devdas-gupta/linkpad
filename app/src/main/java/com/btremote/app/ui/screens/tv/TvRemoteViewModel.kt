@@ -21,8 +21,10 @@ class TvRemoteViewModel @Inject constructor(
     fun dpadLeft()   = viewModelScope.launch { sender().pressAndRelease(HidKeyCode.LEFT_ARROW) }
     fun dpadRight()  = viewModelScope.launch { sender().pressAndRelease(HidKeyCode.RIGHT_ARROW) }
     fun dpadOk()     = viewModelScope.launch { sender().pressAndRelease(HidKeyCode.ENTER) }
-    fun back()       = viewModelScope.launch { sender().pressAndRelease(HidKeyCode.BACKSPACE) }
-    fun home()       = viewModelScope.launch { sender().pressAndRelease(HidKeyCode.HOME) }
+    // BUG 9 — AC_BACK (0x224) is the correct HID Consumer key for Android TV Back navigation
+    fun back()       = viewModelScope.launch { sender().sendConsumerKey(ConsumerUsage.AC_BACK) }
+    // BUG 10 — AC_HOME (0x223) is the correct HID Consumer key for Android TV Home navigation
+    fun home()       = viewModelScope.launch { sender().sendConsumerKey(ConsumerUsage.AC_HOME) }
     fun menu()       = viewModelScope.launch { sender().pressAndRelease(HidKeyCode.ESCAPE) }
     fun volumeUp()   = viewModelScope.launch { sender().sendConsumerKey(ConsumerUsage.VOLUME_UP) }
     fun volumeDown() = viewModelScope.launch { sender().sendConsumerKey(ConsumerUsage.VOLUME_DOWN) }
