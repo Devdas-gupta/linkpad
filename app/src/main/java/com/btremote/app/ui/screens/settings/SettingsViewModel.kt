@@ -6,6 +6,7 @@ import com.btremote.app.data.AppPreferences
 import com.btremote.app.data.HostProfileRepository
 import com.btremote.app.data.HostProfilesState
 import com.btremote.app.data.PreferencesRepository
+import com.btremote.app.sensor.AirMouseController
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.SharingStarted
@@ -16,7 +17,8 @@ import kotlinx.coroutines.launch
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val prefs: PreferencesRepository,
-    private val profileRepo: HostProfileRepository
+    private val profileRepo: HostProfileRepository,
+    private val airMouseController: AirMouseController
 ) : ViewModel() {
 
     val preferences: StateFlow<AppPreferences> = prefs.preferences
@@ -24,6 +26,9 @@ class SettingsViewModel @Inject constructor(
 
     val profilesState: StateFlow<HostProfilesState> = profileRepo.state
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HostProfilesState.DEFAULT)
+
+    /** Returns true if the device has TYPE_GAME_ROTATION_VECTOR sensor. */
+    fun isGameModeAvailable(): Boolean = airMouseController.isGameModeAvailable
 
     fun setPointerSpeed(v: Int) = viewModelScope.launch { prefs.setPointerSpeed(v) }
     fun setScrollSpeed(v: Int) = viewModelScope.launch { prefs.setScrollSpeed(v) }

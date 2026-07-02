@@ -9,6 +9,7 @@ import android.os.IBinder
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
+import com.btremote.app.sensor.AirMouseController
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -21,7 +22,8 @@ import kotlinx.coroutines.launch
 @Singleton
 class HidServiceController @Inject constructor(
     @ApplicationContext private val context: Context,
-    val reportSender: HidReportSender
+    val reportSender: HidReportSender,
+    val airMouseController: AirMouseController
 ) {
     private val _connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Idle)
     val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
@@ -67,6 +69,8 @@ class HidServiceController @Inject constructor(
     }
 
     fun start(backgroundRun: Boolean) {
+        // Start gyro air mouse observer (app-wide, screen-independent)
+        airMouseController.startWatching()
         val intent = Intent(context, HidService::class.java)
         if (backgroundRun && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             context.startForegroundService(intent)
