@@ -66,3 +66,33 @@ Users can now define, save, and edit their own shortcut keys directly in the Key
 - **TV Mode Navigation**: Fixed TV Back and Home buttons by mapping them to correct Android accessibility usage codes (`AC_BACK` / `AC_HOME`).
 - **Direct Input Mode**: Added raw HID forwarding options for physical hardware keyboard inputs.
 
+---
+
+## 🚀 Major Updates in v1.1.0 "SynthLink"
+
+### ✨ Major New Features
+- **Redesigned glassmorphic UI** (SoulExtender Synth theme) with frosted-glass nav bar and radial glow effects.
+- **TV Remote tab** — full D-Pad, numeric keypad, Power & Input/Source buttons, colour keys.
+- **Onboarding walkthrough** — guided 4-page first-launch setup with permission explanations.
+- **Quick Settings Tile** — connect to Linkpad from the notification shade.
+- **Device Switcher Dropdown** — switch, disconnect, or forget paired hosts without leaving the current tab.
+- **Independent Windows & macOS shortcut rows** — toggle each OS's shortcut strip separately on the Keyboard tab.
+- **Android nav buttons on Touchpad** — Back / Home / Recents row (toggle in Settings → Controls).
+- **Scroll strip side toggle** — move the edge scroll strip to the left or right (Settings → Mouse).
+- **In-app Bluetooth pairing** — pair new devices directly inside Linkpad; no need to open Android Settings.
+
+### 🚀 Major Improvements
+- **Windows Bluetooth keep-alive** — background heartbeat prevents Sniff Mode lag and stutter on Windows.
+- **Smooth 125 Hz mouse** — throttled delta distribution eliminates L2CAP buffer overflow and cursor jitter.
+- **Background connection retention** — foreground service auto-promotes on connect so the link survives app minimisation.
+- **Zero-lag typing** — keyboard queue runs on `Dispatchers.IO`; key cycle cut to 20 ms.
+- **Press-and-hold FF/RW** — hold for continuous seeking; brief tap sends a single skip.
+
+### 🐛 Major Bug Fixes
+- Fixed crash on rapid double-tap of "Get Started" in onboarding (`ArrayIndexOutOfBoundsException`).
+- Fixed QS Tile crash on Android 13 and below (`Tile.setSubtitle` API guard).
+- Fixed stuck keys on host when press-and-hold seek loop was cancelled.
+- Fixed Bluetooth permission denial failing silently — now shows an error card with a Settings deep-link.
+- Fixed erratic horizontal scroll on Windows (explicit HID AC Pan bounds in descriptor).
+
+
