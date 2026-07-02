@@ -13,6 +13,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -166,13 +167,10 @@ private fun ControlsTab(p: AppPreferences, vm: SettingsViewModel) {
         trailing = { Toggle(p.showAndroidNavButtons, vm::setShowAndroidNavButtons) })
 
     SectionLabel("VOLUME BUTTONS")
-    Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
-        SegmentedRow(
-            options = listOf("System" to "system", "Remote" to "remote", "Off" to "disabled"),
-            selectedValue = p.volumeButtonAction,
-            onSelect = vm::setVolumeButtonAction
-        )
-    }
+    VolumeButtonOptions(
+        selected = p.volumeButtonAction,
+        onSelect = vm::setVolumeButtonAction
+    )
 }
 
 @Composable
@@ -220,6 +218,10 @@ private fun MouseTab(p: AppPreferences, vm: SettingsViewModel) {
     SettingRow(icon = Icons.Outlined.Mouse, title = "Reverse direction",
         subtitle = "Invert tilt for natural feel",
         trailing = { Toggle(p.airMouseInvert, vm::setAirMouseInvert) })
+    DividerThin()
+    SettingRow(icon = Icons.Outlined.Mouse, title = "Game mode (no drift)",
+        subtitle = "Uses sensor fusion · recommended for precision",
+        trailing = { Toggle(p.airMouseGameMode, vm::setAirMouseGameMode) })
 
     SectionLabel("AIR MOUSE BUTTONS")
     SettingRow(icon = Icons.Outlined.Mouse, title = "Show LEFT click",
@@ -572,6 +574,68 @@ private fun AboutTab() {
             Text("VIEW ON GITHUB", style = MaterialTheme.typography.labelLarge, color = Color.White)
             Spacer(Modifier.width(8.dp))
             Icon(Icons.Outlined.OpenInNew, null, tint = Color.White, modifier = Modifier.size(16.dp))
+        }
+    }
+}
+
+@Composable
+private fun VolumeButtonOptions(selected: String, onSelect: (String) -> Unit) {
+    val options = listOf(
+        Triple("remote",             "Volume remote",          "Controls PC/Mac volume via BT HID"),
+        Triple("system",             "System volume",          "Controls Android device volume"),
+        Triple("disabled",           "Disabled",               "Volume buttons do nothing"),
+        Triple("left_click",         "Left click",             "Both buttons = left mouse click"),
+        Triple("right_click",        "Right click",            "Both buttons = right mouse click"),
+        Triple("up_left_down_right", "Vol↑ = Left  /  Vol↓ = Right",  "Up button left-click, Down button right-click"),
+        Triple("up_right_down_left", "Vol↑ = Right  /  Vol↓ = Left", "Up button right-click, Down button left-click"),
+    )
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
+        options.forEach { (value, label, subtitle) ->
+            val isSelected = selected == value
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(20.dp)
+                        .border(
+                            width = if (isSelected) 0.dp else 1.5.dp,
+                            color = if (isSelected) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.outline,
+                            shape = androidx.compose.foundation.shape.CircleShape
+                        )
+                        .background(
+                            color = if (isSelected) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.surface,
+                            shape = androidx.compose.foundation.shape.CircleShape
+                        )
+                        .padding(4.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (isSelected) {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .background(MaterialTheme.colorScheme.onPrimary, androidx.compose.foundation.shape.CircleShape)
+                        )
+                    }
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable { onSelect(value) }
+                ) {
+                    Text(label, style = MaterialTheme.typography.bodyMedium, color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+                    Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            if (value != options.last().first) {
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f), thickness = 0.5.dp)
+            }
         }
     }
 }

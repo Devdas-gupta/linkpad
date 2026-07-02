@@ -68,6 +68,8 @@ data class AppPreferences(
     val airMouseShowRight: Boolean,
     val airMouseShowMiddle: Boolean,
     val airMouseShowReset: Boolean,
+    /** True = use TYPE_GAME_ROTATION_VECTOR (drift-free). False = raw gyroscope. */
+    val airMouseGameMode: Boolean,
     val scrollBarPosition: String,
     val mouseButtonLayout: String,
     val mouseButtonsPosition: String,
@@ -81,6 +83,16 @@ data class AppPreferences(
     val keepScreenOn: Boolean,
     val showOverLockScreen: Boolean,
     val touchVibrations: Boolean,
+    /**
+     * Controls what physical volume buttons do:
+     *   "remote"             → send HID Consumer Volume Up/Down to PC
+     *   "system"             → pass through to Android (device volume)
+     *   "disabled"           → swallow key, do nothing
+     *   "left_click"         → both buttons send left mouse click
+     *   "right_click"        → both buttons send right mouse click
+     *   "up_left_down_right" → Vol Up = left click, Vol Down = right click
+     *   "up_right_down_left" → Vol Up = right click, Vol Down = left click
+     */
     val volumeButtonAction: String,
     val lastConnectedDeviceAddress: String,
     val directInputMode: Boolean,
@@ -107,6 +119,7 @@ data class AppPreferences(
             airMouseShowRight = true,
             airMouseShowMiddle = false,
             airMouseShowReset = false,
+            airMouseGameMode = true,
             scrollBarPosition = "right",
             mouseButtonLayout = "left_right",
             mouseButtonsPosition = "bottom",
@@ -150,6 +163,7 @@ class PreferencesRepository @Inject constructor(
         val AIR_MOUSE_SHOW_RIGHT   = booleanPreferencesKey("air_mouse_show_right")
         val AIR_MOUSE_SHOW_MIDDLE  = booleanPreferencesKey("air_mouse_show_middle")
         val AIR_MOUSE_SHOW_RESET   = booleanPreferencesKey("air_mouse_show_reset")
+        val AIR_MOUSE_GAME_MODE    = booleanPreferencesKey("air_mouse_game_mode")
         val SCROLL_BAR_POSITION    = stringPreferencesKey("scroll_bar_position")
         val MOUSE_BUTTON_LAYOUT    = stringPreferencesKey("mouse_button_layout")
         val MOUSE_BUTTONS_POSITION = stringPreferencesKey("mouse_buttons_position")
@@ -187,6 +201,7 @@ class PreferencesRepository @Inject constructor(
         airMouseShowRight         = this[Keys.AIR_MOUSE_SHOW_RIGHT] ?: true,
         airMouseShowMiddle        = this[Keys.AIR_MOUSE_SHOW_MIDDLE] ?: false,
         airMouseShowReset         = this[Keys.AIR_MOUSE_SHOW_RESET] ?: false,
+        airMouseGameMode          = this[Keys.AIR_MOUSE_GAME_MODE] ?: true,
         scrollBarPosition         = this[Keys.SCROLL_BAR_POSITION] ?: "right",
         mouseButtonLayout         = this[Keys.MOUSE_BUTTON_LAYOUT] ?: "left_right",
         mouseButtonsPosition      = this[Keys.MOUSE_BUTTONS_POSITION] ?: "bottom",
@@ -221,6 +236,7 @@ class PreferencesRepository @Inject constructor(
     suspend fun setAirMouseShowRight(value: Boolean)  = dataStore.edit { it[Keys.AIR_MOUSE_SHOW_RIGHT] = value }
     suspend fun setAirMouseShowMiddle(value: Boolean) = dataStore.edit { it[Keys.AIR_MOUSE_SHOW_MIDDLE] = value }
     suspend fun setAirMouseShowReset(value: Boolean)  = dataStore.edit { it[Keys.AIR_MOUSE_SHOW_RESET] = value }
+    suspend fun setAirMouseGameMode(value: Boolean)   = dataStore.edit { it[Keys.AIR_MOUSE_GAME_MODE] = value }
     suspend fun setScrollBarPosition(value: String)   = dataStore.edit { it[Keys.SCROLL_BAR_POSITION] = value }
     suspend fun setMouseButtonLayout(value: String)   = dataStore.edit { it[Keys.MOUSE_BUTTON_LAYOUT] = value }
     suspend fun setMouseButtonsPosition(value: String)= dataStore.edit { it[Keys.MOUSE_BUTTONS_POSITION] = value }

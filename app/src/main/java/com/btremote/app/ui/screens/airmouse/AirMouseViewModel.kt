@@ -36,7 +36,7 @@ class AirMouseViewModel @Inject constructor(
 
     private var job: Job? = null
 
-    fun start(sensitivity: Int, invert: Boolean = false) {
+    fun start(sensitivity: Int, invert: Boolean = false, gameMode: Boolean = true) {
         stop()
         // BUG 46 — Refresh sensor availability and calibrate gyro bias on start
         _sensorAvailable.value = sensor.isAvailable()
@@ -44,7 +44,13 @@ class AirMouseViewModel @Inject constructor(
         // BUG 46 — Reset tilt to zero (gyro bias calibration) before starting
         _tilt.value = 0f to 0f
         job = viewModelScope.launch {
-            sensor.deltas(sensitivity, invert).collect { (dx, dy) ->
+            // Use game rotation vector (drift-free) when available and requested
+            val flow = if (gameMode && sensor.isGameModeAvailable()) {
+                sensor.gameDeltas(sensitivity, invert)
+            } else {
+                sensor.deltas(sensitivity, invert)
+            }
+            flow.collect { (dx, dy) ->
                 _tilt.value = dx to dy
                 val sender = controller.reportSender
                 if (sender.isReady()) {
@@ -65,7 +71,7 @@ class AirMouseViewModel @Inject constructor(
         _tilt.value = 0f to 0f
         // Restart sensor collection to re-establish bias baseline
         val curPrefs = preferences.value ?: return
-        start(curPrefs.airMouseSensitivity, curPrefs.airMouseInvert)
+        start(curPrefs.airMouseSensitivity, curPrefs.airMouseInvert, curPrefs.airMouseGameMode)
     }
 
     fun leftClick() {
@@ -97,6 +103,10 @@ class AirMouseViewModel @Inject constructor(
 
     fun setInvert(value: Boolean) {
         viewModelScope.launch { prefs.setAirMouseInvert(value) }
+    }
+
+    fun setGameMode(value: Boolean) {
+        viewModelScope.launch { prefs.setAirMouseGameMode(value) }
     }
 
     override fun onCleared() {

@@ -51,6 +51,7 @@ class SettingsViewModel @Inject constructor(
     fun setAirMouseShowRight(v: Boolean) = viewModelScope.launch { prefs.setAirMouseShowRight(v) }
     fun setAirMouseShowMiddle(v: Boolean) = viewModelScope.launch { prefs.setAirMouseShowMiddle(v) }
     fun setAirMouseShowReset(v: Boolean) = viewModelScope.launch { prefs.setAirMouseShowReset(v) }
+    fun setAirMouseGameMode(v: Boolean) = viewModelScope.launch { prefs.setAirMouseGameMode(v) }
     fun setTargetOs(v: String) = viewModelScope.launch { prefs.setTargetOs(v) }
     fun setBackgroundServiceNotification(v: Boolean) = viewModelScope.launch { prefs.setBackgroundServiceNotification(v) }
 

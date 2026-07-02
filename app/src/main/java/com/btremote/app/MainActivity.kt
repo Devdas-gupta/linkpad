@@ -20,6 +20,7 @@ import androidx.lifecycle.lifecycleScope
 import com.btremote.app.bluetooth.ConnectionState
 import com.btremote.app.bluetooth.ConsumerUsage
 import com.btremote.app.bluetooth.HidServiceController
+import com.btremote.app.bluetooth.MouseButtonMask
 import com.btremote.app.data.PreferencesRepository
 import com.btremote.app.ui.navigation.BTRemoteNavGraph
 import com.btremote.app.ui.theme.BTRemoteTheme
@@ -182,6 +183,26 @@ class MainActivity : ComponentActivity() {
                 "remote" -> {
                     val usage = if (keyCode == KeyEvent.KEYCODE_VOLUME_UP) ConsumerUsage.VOLUME_UP else ConsumerUsage.VOLUME_DOWN
                     lifecycleScope.launch { controller.reportSender.sendConsumerKey(usage) }
+                }
+                "left_click" -> {
+                    lifecycleScope.launch {
+                        controller.reportSender.tapMouseClick(MouseButtonMask.LEFT.mask)
+                    }
+                }
+                "right_click" -> {
+                    lifecycleScope.launch {
+                        controller.reportSender.tapMouseClick(MouseButtonMask.RIGHT.mask)
+                    }
+                }
+                "up_left_down_right" -> {
+                    val mask = if (keyCode == KeyEvent.KEYCODE_VOLUME_UP)
+                        MouseButtonMask.LEFT.mask else MouseButtonMask.RIGHT.mask
+                    lifecycleScope.launch { controller.reportSender.tapMouseClick(mask) }
+                }
+                "up_right_down_left" -> {
+                    val mask = if (keyCode == KeyEvent.KEYCODE_VOLUME_UP)
+                        MouseButtonMask.RIGHT.mask else MouseButtonMask.LEFT.mask
+                    lifecycleScope.launch { controller.reportSender.tapMouseClick(mask) }
                 }
                 "disabled" -> { }
                 else -> { }

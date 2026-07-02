@@ -57,13 +57,14 @@ fun AirMouseScreen(
     val enabled     = prefs?.airMouseEnabled ?: false
     val sensitivity = (prefs?.airMouseSensitivity ?: 8).coerceIn(1, 20)
     val invert      = prefs?.airMouseInvert ?: false
+    val gameMode    = prefs?.airMouseGameMode ?: true
     val showLeft    = prefs?.airMouseShowLeft ?: true
     val showRight   = prefs?.airMouseShowRight ?: true
     val showMiddle  = prefs?.airMouseShowMiddle ?: false
     val showReset   = prefs?.airMouseShowReset ?: true
 
-    LaunchedEffect(enabled, sensitivity, invert) {
-        if (enabled) viewModel.start(sensitivity, invert) else viewModel.stop()
+    LaunchedEffect(enabled, sensitivity, invert, gameMode) {
+        if (enabled) viewModel.start(sensitivity, invert, gameMode) else viewModel.stop()
     }
     DisposableEffect(Unit) { onDispose { viewModel.stop() } }
 
@@ -117,6 +118,7 @@ fun AirMouseScreen(
                 Text(
                     when {
                         !sensorAvailable -> "No gyroscope"
+                        enabled && gameMode -> "Air Mouse ON · Game Mode"
                         enabled -> "Air Mouse ON"
                         else -> "Air Mouse OFF"
                     },
@@ -129,6 +131,7 @@ fun AirMouseScreen(
                 Text(
                     when {
                         !sensorAvailable -> "Gyroscope unavailable on this device"
+                        enabled && gameMode -> "Drift-free · Tilt phone to move cursor"
                         enabled -> "Tilt phone to move cursor"
                         else -> "Enable in Settings → Mouse"
                     },
