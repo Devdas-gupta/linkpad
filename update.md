@@ -1,9 +1,41 @@
 # BTRemote (Linkpad) — UPDATE NOTES
-> Version 1.2.0 · versionCode 4
 
 ---
 
-## 🚀 Major Updates in 1.2.0
+## 🚀 Major Updates in v1.3.0
+
+### 1. 🎮 Game-Style Gyro Mouse (Drift-Free)
+- **Game Mode**: Air Mouse now uses `TYPE_GAME_ROTATION_VECTOR` (sensor fusion — gyro + accelerometer) for drift-free, quaternion-based cursor movement — the same technique used in FPS gaming controllers.
+- **Dead Zone**: Micro-tremors are filtered out so the cursor stays perfectly still when the phone is held steady.
+- **Non-Linear Sensitivity Curve**: Slow tilt = precise movement · Fast tilt = quick movement, just like a gaming mouse DPI curve.
+- **Fallback**: Devices without game rotation vector sensor automatically fall back to the classic gyro mode.
+
+### 2. 🌐 Air Mouse Works on All Screens
+- Air Mouse is now **global** — the gyro sensor runs app-wide in the background regardless of which tab is active (keyboard, touchpad, media, etc.).
+- No need to stay on the Air Mouse tab to use tilt-to-cursor while typing.
+
+### 3. 🔘 Volume Buttons as Mouse Clicks
+- Volume buttons can now be assigned to mouse click actions:
+  - **Remote** — controls PC/Mac volume via BT HID
+  - **System** — controls Android device volume
+  - **Vol↑ = Left Click / Vol↓ = Right Click** — click and right-click without touching the screen
+
+### 4. 🎨 Air Mouse Screen Redesign
+- Animated pulse status dot that breathes when the sensor is active.
+- Polished crosshair with glow cursor, halo effect, and white specular highlight.
+- Sensitivity level badge shown on the canvas.
+- Cleaner button hierarchy: filled (LEFT/RIGHT), tonal (MIDDLE), outlined (RESET).
+
+---
+
+## 🛠️ Bug Fixes in v1.3.0
+
+- **Dagger Circular Dependency Fix**: Resolved a `DependencyCycle` crash caused by `HidServiceController` and `AirMouseController` injecting each other. Fixed by injecting `HidReportSender` directly.
+- **Game Mode Conditional Toggle**: Settings only shows the "Game Mode" toggle if the device actually has the required `TYPE_GAME_ROTATION_VECTOR` sensor.
+
+---
+
+## 🚀 Major Updates in v1.2.0
 
 ### 1. ✨ Custom Shortcut Keys & Custom Editor
 Users can now define, save, and edit their own shortcut keys directly in the Keyboard tab.
