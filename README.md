@@ -44,7 +44,7 @@ Use it as a silent remote for your living-room TV, a backup keyboard when yours 
 
 - **Touchpad** — laptop-class trackpad with 1-finger move, 2-finger scroll (vertical + horizontal AC Pan), 2-finger tap right-click, tap-to-drag, and a precision right-edge scroll strip.
 - **Software keyboard** — relays your typing to the host in real time. Optional Shortcuts row (Cmd / Ctrl + C/V/X/Z/A, Alt+Tab), F-keys, Edit cluster (Backspace / Del / Home / End / PgUp / PgDn / Insert), and Arrow cluster.
-- **Air mouse** — gyroscope-driven cursor with low-pass filter. Configurable sensitivity, axis invert, and per-button visibility.
+- **Air mouse** — gyroscope-driven cursor with drift-free Game Mode (sensor fusion) and a low-pass filter fallback. Works globally in the background across all screens (e.g., while typing on the keyboard). Features adjustable sensitivity, noise dead zone, non-linear acceleration curve, axis invert, and per-button visibility.
 - **Media remote** — brightness, volume, mute, prev/next track, play/pause, plus press-and-hold FF/RW for continuous seeking.
 - **TV Remote** — dedicated tab with D-Pad ring, system keys (Back / Home / Menu), volume & channel controls, colour function keys (F1–F4), Power & Input/Source buttons, and a numeric keypad.
 - **Multi-host profiles** — save Mac / PC / iPad / TV profiles, each with its own target-OS layout and last-connected device. Switch in one tap.
@@ -80,11 +80,10 @@ See [changelog.md](changelog.md) for the full detailed changelog.
 
 ### Terminal
 
+Make sure you have JDK 17+ installed, then build the debug APK using:
+
 ```sh
-brew install gradle
-gradle wrapper --gradle-version 8.6
 ./gradlew assembleDebug
-./gradlew installDebug   # installs to a USB-connected device
 ```
 
 ### Variants
