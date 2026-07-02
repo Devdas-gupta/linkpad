@@ -163,16 +163,6 @@ Nothing leaves your phone.
 
 ---
 
-## Roadmap
-
-- Custom keyboard layouts (AZERTY, QWERTZ, Dvorak)
-- Macro recorder
-- Lock-screen widget for play / pause / skip
-- Material You dynamic color
-- Optional encrypted cloud sync of profiles
-
----
-
 ## Contributing
 
 Issues and pull requests welcome. Before submitting:
