@@ -1,6 +1,6 @@
 package com.btremote.app.sensor
 
-import com.btremote.app.bluetooth.HidServiceController
+import com.btremote.app.bluetooth.HidReportSender
 import com.btremote.app.data.PreferencesRepository
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -26,7 +26,7 @@ import kotlinx.coroutines.launch
 @Singleton
 class AirMouseController @Inject constructor(
     private val sensor: AirMouseSensor,
-    private val hidController: HidServiceController,
+    private val reportSender: HidReportSender,
     private val prefs: PreferencesRepository
 ) {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -68,7 +68,7 @@ class AirMouseController @Inject constructor(
             }
             flow.collect { (dx, dy) ->
                 _tilt.value = dx to dy
-                val sender = hidController.reportSender
+                val sender = reportSender
                 if (sender.isReady()) {
                     sender.queueMouseMove(dx.toInt(), dy.toInt())
                 }
